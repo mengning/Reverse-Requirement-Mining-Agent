@@ -57,9 +57,9 @@ export async function withWorkflowLifecycle(env,callback,{request=fetch,interval
   }
 }
 
-function command(file,args) {
+function command(file,args,env) {
   return new Promise((resolve,reject)=>{
-    const child=spawn(file,args,{windowsHide:true,stdio:['ignore','pipe','pipe']});
+    const child=spawn(file,args,{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
     let stdout='',stderr='';
     child.stdout.on('data',data=>{stdout+=data;});
     child.stderr.on('data',data=>{stderr+=data;});
@@ -69,11 +69,11 @@ function command(file,args) {
   });
 }
 
-export async function stopMiningContainers(label) {
+export async function stopMiningContainers(label,env) {
   if(!/^devstar-mining-run=[0-9a-f]{32}$/.test(label || '')) return;
-  const ids=(await command('docker',['ps','-aq','--filter',`label=${label}`])).trim().split(/\s+/).filter(Boolean);
+  const ids=(await command('docker',['ps','-aq','--filter',`label=${label}`],env)).trim().split(/\s+/).filter(Boolean);
   if(ids.some(id=>! /^[0-9a-f]{12,64}$/.test(id))) throw Error('无法确认本次探索容器，拒绝清理其他容器');
-  if(ids.length) await command('docker',['rm','--force',...ids]);
+  if(ids.length) await command('docker',['rm','--force',...ids],env);
 }
 
 export function runMiningProcess(file,args,{env,signal,cwd,stdio='inherit',ownGroup=env?.MINING_PROCESS_GROUP!=='shared'}={}) {
@@ -86,7 +86,7 @@ export function runMiningProcess(file,args,{env,signal,cwd,stdio='inherit',ownGr
         try {
           if(process.platform==='win32') await command('taskkill',['/PID',String(child.pid),'/T','/F']);
           else {try {ownGroup?process.kill(-child.pid,'SIGKILL'):child.kill('SIGKILL');} catch(error) {if(error.code!=='ESRCH') throw error;}}
-        } finally {await stopMiningContainers(env?.MINING_EXECUTION_LABEL);}
+        } finally {await stopMiningContainers(env?.MINING_EXECUTION_LABEL,env);}
       })();
       // close awaits this promise; attach a handler immediately as cleanup can
       // fail before the process close event is delivered.
