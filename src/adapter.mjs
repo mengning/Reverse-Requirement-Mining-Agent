@@ -19,7 +19,12 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   validateRuntimeScope(process.env);
   const {tasks} = JSON.parse(await readFile(new URL('../mining/tasks/official-catalog.json', import.meta.url), 'utf8'));
   const controller = new AbortController();
-  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => controller.abort());
+  const stop = () => {
+    controller.abort();
+    // Older template Runtime versions do not stop the polling loop on abort.
+    setTimeout(() => process.exit(1), 45000).unref();
+  };
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
   await runDevstarAgent({signal: controller.signal, handleEvent: createAdapter({
     catalog: tasks.map(task => task.instance_id), pipeline: runOfficialPipeline, signal: controller.signal,
   })});

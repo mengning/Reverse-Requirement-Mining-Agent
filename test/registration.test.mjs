@@ -54,7 +54,7 @@ test("mining Agent registers through the shared Runtime", async (t) => {
   });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  t.after(() => child.kill());
+  t.after(() => child.kill("SIGKILL"));
 
   await Promise.race([
     registration,
@@ -129,7 +129,7 @@ test("mining Agent acknowledges an invalid command without starting exploration"
   });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  t.after(() => child.kill());
+  t.after(() => child.kill("SIGKILL"));
 
   const ackBody = await Promise.race([
     acknowledgement,
