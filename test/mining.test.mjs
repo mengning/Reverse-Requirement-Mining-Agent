@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -63,6 +63,102 @@ test('invalid or ambiguous requests never invoke mining', async () => {
   await assert.rejects(() => handle({...event, repository: {id: 12, full_name: 'elsewhere/repo'}}, env), /bound repository/);
   await assert.rejects(() => handle({...event, repository: {...event.repository, id: 13}}, env), /bound repository/);
   await assert.rejects(() => handle({...event, credentials: {}}, env), /credential/);
+});
+
+test('a pre-publication failure preserves diagnostics and permits one successful replay', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-retry-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, '19');
+  let explorations = 0;
+  let publications = 0;
+  const options = {
+    recoverIncomplete: true,
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async (_url, request) => {
+      if (request.method !== 'POST') return Response.json({full_name: repository, has_issues: true});
+      publications++;
+      return Response.json({...JSON.parse(request.body), number: 7}, {status: 201});
+    },
+    run: async (_instance, directory) => {
+      await mkdir(directory);
+      if (++explorations === 1) {
+        await writeFile(path.join(directory, 'diagnostic.txt'), 'runner stopped before publishing');
+        throw new Error('runner stopped');
+      }
+      await writeFile(path.join(directory, 'issue.json'), JSON.stringify({title: 'Candidate', body: 'Evidence'}));
+    },
+  };
+  const attempt = () => runOfficialPipeline(instance, output, repository, options);
+  await assert.rejects(attempt(), /runner stopped/);
+  assert.equal(publications, 0);
+  const receipt = await attempt();
+  assert.equal(receipt.number, 7);
+  assert.deepEqual(await attempt(), receipt);
+  const archives = (await readdir(state)).filter(name => name.startsWith('19.incomplete-'));
+  assert.equal(archives.length, 1);
+  assert.equal(await readFile(path.join(state, archives[0], 'diagnostic.txt'), 'utf8'), 'runner stopped before publishing');
+  assert.deepEqual({explorations, publications}, {explorations: 2, publications: 1});
+});
+
+test('an existing publication receipt without a manifest prevents both rerunning and posting', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-uncertain-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, '19');
+  await mkdir(output);
+  const receipt = path.join(output, 'publication.json');
+  await writeFile(receipt, '{"status":"submitting"}');
+  await assert.rejects(runOfficialPipeline(instance, output, repository, {
+    recoverIncomplete: true,
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async (_url, request) => {
+      assert.notEqual(request.method, 'POST');
+      return Response.json({full_name: repository, has_issues: true});
+    },
+    run: () => assert.fail('pipeline must not run while publication is uncertain'),
+  }), /发布回执存在/);
+  assert.equal(await readFile(receipt, 'utf8'), '{"status":"submitting"}');
+  assert.deepEqual(await readdir(state), ['19']);
+});
+
+test('standalone use does not move an existing output directory', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-existing-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, 'user-files');
+  await mkdir(output);
+  await writeFile(path.join(output, 'original.txt'), 'keep');
+  await assert.rejects(runOfficialPipeline(instance, output, repository, {
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async () => Response.json({full_name: repository, has_issues: true}),
+    run: async (_instance, directory) => mkdir(directory),
+  }), {code: 'EEXIST'});
+  assert.deepEqual(await readdir(state), ['user-files']);
+  assert.equal(await readFile(path.join(output, 'original.txt'), 'utf8'), 'keep');
+});
+
+test('a lost issue creation response stops replay without rerunning the model or posting again', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-lost-response-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, '19');
+  let explorations = 0;
+  let publications = 0;
+  const options = {
+    recoverIncomplete: true,
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async (_url, request) => {
+      if (request.method !== 'POST') return Response.json({full_name: repository, has_issues: true});
+      publications++;
+      throw new Error('connection closed after submitting');
+    },
+    run: async (_instance, directory) => {
+      explorations++;
+      await mkdir(directory);
+      await writeFile(path.join(directory, 'issue.json'), JSON.stringify({title: 'Candidate', body: 'Evidence'}));
+    },
+  };
+  const attempt = () => runOfficialPipeline(instance, output, repository, options);
+  await assert.rejects(attempt(), /connection closed after submitting/);
+  await assert.rejects(attempt(), /Submission outcome is uncertain/);
+  assert.deepEqual({explorations, publications}, {explorations: 1, publications: 1});
 });
 
 test('native Agent Team delivery links the new issue from the source comment and acknowledges the event', async t => {
