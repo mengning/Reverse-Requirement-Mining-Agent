@@ -1,89 +1,27 @@
-# DevStar Agent Template
+# Program Requirement Agent
 
-这是 DevStar 业务 Agent 的项目模板。新 Agent 应通过“从模板创建”生成独立仓库，不再通过 Fork 关系同步公共运行代码。
+在实验仓库的工单中，向已绑定该仓库的实例发送 `@实例名 /mine chmln__sd.87d1ba5`。每条委托只接受一个官方 ProgramBench 实例标识，成功后创建一张普通需求工单，并在原工单回帖附上链接。报告区分实际输入输出、文档依据、推断和未验证边界。挖掘 Agent 不创建规格 PR；由 Planner 建议、人工授权后交给 Spec Agent。
 
-## 仓库职责
+## 实例配置
 
-Template 只提供：
+沿用模板的 `.devstar/entrypoint.sh` 和 `.devstar/agent-runtime` 子模块。实例以 repository 范围启动，不使用用户级或全站运行规则。
 
-- `.devstar/agent.json` Agent 能力声明；
-- `.devstar/entrypoint.sh` 通用启动入口；
-- `.devstar/Dockerfile` 基础容器构建方式；
-- `.devstar/workflows/ci.yaml` 干净环境和容器启动验证；
-- `src/adapter.mjs` 示例业务处理入口；
-- `.devstar/agent-runtime` 公共 Runtime 子模块。
+| 配置 | 用途 |
+| --- | --- |
+| `DEVSTAR_AGENT_SCOPE_KIND=repository`、`DEVSTAR_AGENT_SCOPE_REPO_ID` | 由 Agent Team 指定仓库范围；事件必须来自同一仓库 ID |
+| `MINING_AGENT_REPOSITORY` | 目标仓库的完整名称（`OWNER/REPO`），与分派事件的仓库名称一致 |
+| `MINING_AGENT_STATE_DIR` | Agent 私有的持久绝对路径；按仓库和事件隔离发布回执，重试不会重复建单 |
+| `OPENJIUWEN_API_BASE`、`OPENJIUWEN_MODEL`、`OPENJIUWEN_API_KEY` | 探索模型配置，密钥通过实例 Secrets 注入 |
+| `MINING_PYTHON` | 运行固定 Python 依赖的解释器；模板构建的镜像已配置 |
 
-注册、事件轮询、心跳、Git 凭据和评论回写由独立的 `devstar/agent-runtime` 仓库维护，并通过 `.devstar/agent-runtime` 子模块引入，不在业务 Agent 中复制。
+运行环境需要能连接经管理员批准的专用 Docker 执行环境并获取官方参考镜像。镜像只安装 Docker 客户端所需软件，不自动挂载宿主 socket、不启用特权模式。模型负责根据公开文档选择普通功能探测；参考程序在断网、非 root 的容器中运行。工单写入使用当前委托事件的服务账号，不使用模型凭证、用户令牌或实例注册令牌。
 
-## 创建业务 Agent
-
-1. 在 DevStar 创建仓库时选择模板 `templates/agent-template`。
-2. 修改 `.devstar/agent.json` 中的名称、说明、运行模式和能力。
-3. 在 `src/adapter.mjs` 中实现业务事件处理。
-4. 声明业务需要的系统、Python 或 npm 依赖。
-5. 运行测试后，将业务 Agent 仓库添加到 DevStar Agent Team。
-
-通过模板生成的仓库是独立仓库，不需要继续同步 Template。
-
-## Runtime 依赖
-
-`.devstar/agent-runtime` 是跟踪 `main` 分支的 Git Submodule。每次 Agent 构建启动时，`.devstar/entrypoint.sh` 会执行等价于以下命令的更新：
-
-```bash
-git submodule sync --recursive
-git submodule update --force --init --remote --recursive --depth 1
-```
-
-Runtime 目录由启动入口作为只读依赖管理，本地改动会在更新时被覆盖。启动日志会输出实际使用的 Runtime commit。业务 Agent 不需要提交 Runtime 升级 PR，下一次构建启动会自动获取最新版本。
-
-## 实现业务逻辑
-
-```js
-import {
-  extractCommand,
-  extractSourceEvent,
-  replyToSourceComment,
-  runDevstarAgent,
-} from "../.devstar/agent-runtime/src/index.mjs";
-
-async function handleEvent(eventPayload) {
-  const result = await myAgentRun(extractCommand(eventPayload));
-  const source = extractSourceEvent(eventPayload);
-  if (source === "issue_comment" || source === "pull_request_comment") {
-    await replyToSourceComment(eventPayload, result);
-  }
-  return {summary: result};
-}
-
-await runDevstarAgent({handleEvent});
-```
-
-## 两种运行模式
-
-- `subscription_service`：常驻运行，持续轮询事件并发送心跳。
-- `job_runner`：领取一条任务，处理完成后退出。
-
-`.devstar/agent.json` 的 `launch_kind` 必须与 `.devstar/entrypoint.sh` 中的 `AGENT_LAUNCH_KIND` 一致。
-
-## 依赖声明
-
-业务 Agent 可以在 `.devstar/entrypoint.sh` 中声明：
+## 本地验证
 
 ```sh
-export AGENT_REQUIREMENTS_ALPINE="python3 py3-pip"
-export AGENT_REQUIREMENTS_DEBIAN="python3 python3-pip"
-export AGENT_REQUIREMENTS_PIP="requests"
-export AGENT_REQUIREMENTS_NPM=""
-```
-
-Runtime 会根据容器系统安装这些依赖。依赖安装或业务 Adapter 启动失败时，启动过程直接失败并输出日志。
-
-## 本地检查
-
-```bash
+git submodule update --init
 npm test
-sh .devstar/entrypoint.sh
-docker build -f .devstar/Dockerfile -t my-agent:test .
+docker build -f .devstar/Dockerfile -t program-requirement:test .
 ```
 
-CI 会分别验证源码启动和当前 Dockerfile 构建启动，不依赖业务仓库中的额外验证脚本。
+测试覆盖模板注册、无效命令拒绝、跨仓库拒绝、真实发布代码的模拟 HTTP 边界、回执重放与回复。这些测试不调用模型。线上验收另外用一个官方样例跑完 `/mine` → 自动建单 → Planner 授权 → Spec Agent 规格 PR，不合并。

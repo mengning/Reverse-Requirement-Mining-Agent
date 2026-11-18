@@ -1,0 +1,107 @@
+import assert from 'node:assert/strict';
+import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import {runOfficialPipeline} from '../mining/official-run.mjs';
+import {runDevstarAgentOnce} from '../.devstar/agent-runtime/src/index.mjs';
+import {createHandler} from '../src/handle-event.mjs';
+import {createAdapter} from '../src/adapter.mjs';
+
+const instance = 'chmln__sd.87d1ba5';
+const repository = 'owner/mining-lab';
+const origin = 'https://devstar.example';
+const event = {
+  event_id: 19, repository: {id: 12, full_name: repository},
+  body: {command: `/mine ${instance}`},
+  credentials: {service_account: {token: 'test-service-account-token'}},
+};
+const env = {
+  SELF_URL: origin, DEVSTAR_AGENT_SCOPE_KIND: 'repository', DEVSTAR_AGENT_SCOPE_REPO_ID: '12',
+  MINING_AGENT_REPOSITORY: repository, DEVSTAR_TOKEN: 'instance-token-not-for-mining',
+  GITHUB_TOKEN: 'unrelated-token', OPENJIUWEN_MODEL: 'fixture-model',
+};
+
+test('standard event invokes the real publisher once and reuses the receipt on replay', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  let explorations = 0;
+  let publications = 0;
+  const issueURL = `${origin}/${repository}/issues/7`;
+  const handle = createHandler({catalog: [instance], pipeline: (id, output, repo, options) => runOfficialPipeline(id, output, repo, {
+    ...options,
+    run: async (input, directory, childEnv) => {
+      assert.equal(input, instance);
+      assert.equal(childEnv.GITHUB_TOKEN, undefined);
+      assert.equal(childEnv.OPENJIUWEN_MODEL, 'fixture-model');
+      await mkdir(directory);
+      await writeFile(path.join(directory, 'issue.json'), JSON.stringify({title: 'Candidate requirement', body: 'Observed input/output'}));
+      explorations += 1;
+    },
+    request: async (url, request) => {
+      assert.equal(request.headers.Authorization, 'token test-service-account-token');
+      const base = `${origin}/api/v1/repos/${repository}`;
+      if (url === base) return Response.json({full_name: repository, has_issues: true});
+      assert.equal(url, base + '/issues');
+      assert.equal(request.method, 'POST');
+      publications += 1;
+      return Response.json({...JSON.parse(request.body), number: 7, html_url: issueURL}, {status: 201});
+    },
+  })});
+  const options = {...env, MINING_AGENT_STATE_DIR: state};
+  const result = await handle(event, options);
+  assert.deepEqual(result.result, {issue_number: 7, issue_url: issueURL});
+  assert.deepEqual(await handle(event, options), result);
+  assert.deepEqual({explorations, publications}, {explorations: 1, publications: 1});
+});
+
+test('invalid or ambiguous requests never invoke mining', async () => {
+  const handle = createHandler({catalog: [instance], pipeline: () => assert.fail('pipeline must not run')});
+  for (const command of ['/mine', `/mine ${instance} extra`, '/mine another__program.0000000', '/mine https://example.com/repo']) {
+    assert.equal((await handle({...event, body: {command}}, env)).status, 'input_required');
+  }
+  await assert.rejects(() => handle({...event, repository: {id: 12, full_name: 'elsewhere/repo'}}, env), /bound repository/);
+  await assert.rejects(() => handle({...event, repository: {...event.repository, id: 13}}, env), /bound repository/);
+  await assert.rejects(() => handle({...event, credentials: {}}, env), /credential/);
+});
+
+test('native Agent Team delivery links the new issue from the source comment and acknowledges the event', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-native-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const taskID = 'lab-mining-test-19';
+  const issueURL = `${origin}/${repository}/issues/7`;
+  const delivered = {...event, delivery_id: taskID, body: {...event.body, issue: {number: 2},
+    runtime_task: {version: 'agent-events/v1', phase: 'native', task_id: taskID, context_sha256: 'fixture',
+      repository: {base_revision: 'a'.repeat(40)}}}};
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const route = new URL(url).pathname;
+    const payload = options.body ? JSON.parse(options.body) : null;
+    requests.push([options.method, route]);
+    if (route.endsWith('/register')) {
+      assert.deepEqual(payload.scope, {kind: 'repository', repo_id: 12});
+      return Response.json({runtime_protocol: 'agent-events/v1'});
+    }
+    if (route.endsWith('/next-event')) return Response.json(delivered);
+    if (route.endsWith('/issues/2/comments') && options.method === 'POST') {
+      assert.ok(payload.body.includes(issueURL));
+      return Response.json({id: 92}, {status: 201});
+    }
+    if (route.endsWith('/19/ack')) {
+      assert.ok(payload.summary.includes(issueURL));
+      if (payload.result?.version === 'agent-events/v1') {
+        assert.equal(payload.result.result_comment_id, 92);
+        assert.equal(payload.result.status, 'completed');
+        assert.equal(payload.result.data.issue_number, 7);
+      } else {
+        assert.equal(payload.result.issue_number, 7);
+      }
+      return new Response(null, {status: 204});
+    }
+    assert.fail(`Unexpected request: ${route}`);
+  });
+  await runDevstarAgentOnce({
+    handleEvent: createAdapter({catalog: [instance], pipeline: async () => ({number: 7, issue_url: issueURL})}),
+  }, {...env, GITHUB_TOKEN: '', MINING_AGENT_STATE_DIR: state, DEVSTAR_RUNTIME_STATE_DIR: state});
+  assert.deepEqual(requests.map(([method]) => method), ['POST', 'GET', 'POST', 'POST']);
+});

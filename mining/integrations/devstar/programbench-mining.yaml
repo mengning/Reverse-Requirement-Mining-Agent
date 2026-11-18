@@ -1,0 +1,62 @@
+agent:
+  step_limit: 12
+  wall_time_limit_seconds: 900
+  system_template: |
+    You examine a reference program using its bundled documentation and normal
+    interface. Work offline. Do not obtain source code, decompile the program,
+    or use tracing tools. Record only actual observations, not predicted output.
+    Do not inspect executable or launcher contents with cat, head, strings, or
+    similar tools. Read public documentation instead. You have at most 12 model
+    calls: reserve the last 3 for reporting and submission. After a few useful
+    probes, write a preliminary report, update it as needed, and submit by call
+    10. Limited coverage is acceptable when clearly stated; do not keep adding
+    tests at the expense of producing the report.
+  instance_template: |
+    Read the documentation in /workspace and explore ./executable using its
+    normal interface. Run ./executable directly at least once (without a pipe
+    or shell wrapper, semicolons, &&, or a trailing echo).
+    Write /workspace/requirements-mining.md in Chinese.
+    Describe the observed functionality, exact inputs and outputs, exit codes,
+    documentation evidence, and important unexplored boundaries. Separate
+    inference from observation. This is a candidate for review, not a claim
+    that all program requirements have been discovered. Do not implement the
+    program. When finished, run `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` as
+    a separate command.
+environment:
+  cwd: /workspace
+  timeout: 30
+  container_timeout: 20m
+  run_args:
+    - --rm
+    - --network
+    - none
+    - --cpus
+    - '2'
+    - --memory
+    - 2g
+    - --memory-swap
+    - 2g
+    - --pids-limit
+    - '256'
+    - --user
+    - agent
+    - --cap-drop
+    - ALL
+    - --security-opt
+    - no-new-privileges
+model:
+  model_kwargs:
+    max_tokens: 4096
+  observation_template: |
+    {% if output.exception_info %}<exception>{{ output.exception_info }}</exception>{% endif %}
+    <returncode>{{ output.returncode }}</returncode>
+    <output>{{ output.output[:10000] }}</output>
+    {% if n_model_calls is defined and n_model_calls >= 7 %}
+    <IMPORTANT>
+    Exploration budget is exhausted. Do not run any more probes. Use the
+    observations already collected to write /workspace/requirements-mining.md
+    now, marking unexplored behavior as unknown. Then submit with a separate
+    `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` call. A short partial report
+    is preferable to failing without a report.
+    </IMPORTANT>
+    {% endif %}
