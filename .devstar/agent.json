@@ -1,12 +1,33 @@
 {
-  "id": "my_agent",
-  "display_name": "My Agent",
-  "description": "My custom agent for DevStar.",
+  "id": "requirements-mining",
+  "display_name": "Requirements Mining Agent",
+  "description": "Explore one ProgramBench reference program and create one requirements issue.",
   "launch_kind": "subscription_service",
   "subscriptions": ["agent_command"],
   "capabilities": ["task_dispatch"],
-  "allowed_scopes": ["repository", "owner", "global"],
+  "allowed_scopes": ["repository"],
   "default_delivery_mode": "single_best",
   "default_bot_access_profile": "write",
-  "im_providers": []
+  "agent_card": {
+    "schema_version": "v1",
+    "name": "requirements-mining",
+    "display_name": "Requirements Mining Agent",
+    "description": "Collects black-box evidence for one selected reference program and publishes a candidate requirements issue.",
+    "capabilities": [
+      {
+        "id": "requirements-mining",
+        "title": "Black-box requirements mining",
+        "description": "Explore one ProgramBench instance and create an ordinary requirements issue.",
+        "when_to_use": "Only when a user explicitly asks to explore a named ProgramBench instance. Do not select for reviewing or drafting a specification, or follow-ups on a generated requirements issue.",
+        "required_context": ["repository", "goal"]
+      }
+    ],
+    "commands": [
+      {
+        "name": "/mine",
+        "capability": "requirements-mining",
+        "description": "Explore exactly one ProgramBench instance: /mine owner__program.short-revision"
+      }
+    ]
+  }
 }

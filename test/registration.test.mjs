@@ -9,7 +9,7 @@ function json(response, status, body) {
   response.end(body === undefined ? "" : JSON.stringify(body));
 }
 
-test("example Agent registers through the shared Runtime", async (t) => {
+test("mining Agent registers through the shared Runtime", async (t) => {
   const requests = [];
   let registered;
   const registration = new Promise((resolve) => { registered = resolve; });
@@ -46,6 +46,7 @@ test("example Agent registers through the shared Runtime", async (t) => {
       DEVSTAR_AGENT_INSTANCE_ID: "1",
       DEVSTAR_AGENT_SCOPE_KIND: "repository",
       DEVSTAR_AGENT_SCOPE_REPO_ID: "42",
+      MINING_AGENT_REPOSITORY: "owner/lab",
       AGENT_REPO_NAME: "template-agent",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -53,7 +54,7 @@ test("example Agent registers through the shared Runtime", async (t) => {
   });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  t.after(() => child.kill());
+  t.after(() => child.kill("SIGKILL"));
 
   await Promise.race([
     registration,
@@ -65,7 +66,7 @@ test("example Agent registers through the shared Runtime", async (t) => {
   });
 });
 
-test("example Agent receives and acknowledges a minimal task", async (t) => {
+test("mining Agent acknowledges an invalid command without starting exploration", async (t) => {
   const requests = [];
   let eventDelivered = false;
   let acknowledged;
@@ -88,6 +89,7 @@ test("example Agent receives and acknowledges a minimal task", async (t) => {
           eventDelivered = true;
           json(response, 200, {
             event_id: 23,
+            repository: {id: 42, full_name: "owner/lab"},
             body: {command: "template-smoke", source_event: "agent_command"},
           });
         } else {
@@ -119,6 +121,7 @@ test("example Agent receives and acknowledges a minimal task", async (t) => {
       DEVSTAR_AGENT_INSTANCE_ID: "1",
       DEVSTAR_AGENT_SCOPE_KIND: "repository",
       DEVSTAR_AGENT_SCOPE_REPO_ID: "42",
+      MINING_AGENT_REPOSITORY: "owner/lab",
       AGENT_REPO_NAME: "template-agent",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -126,12 +129,12 @@ test("example Agent receives and acknowledges a minimal task", async (t) => {
   });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  t.after(() => child.kill());
+  t.after(() => child.kill("SIGKILL"));
 
   const ackBody = await Promise.race([
     acknowledgement,
     new Promise((_, reject) => setTimeout(() => reject(new Error(`acknowledgement timed out: ${stderr}`)), 5000)),
   ]);
-  assert.equal(ackBody.summary, "Received command: template-smoke");
+  assert.match(ackBody.summary, /未启动探测或建单/);
   assert.ok(requests.some(({url}) => url === "/-/agent-services/instances/register"));
 });

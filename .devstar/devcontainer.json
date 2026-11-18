@@ -1,9 +1,12 @@
 {
-  "name": "My Agent",
-  "image": "node:24-alpine",
+  "name": "Requirements Mining Agent",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
   "overrideCommand": true,
   "remoteUser": "root",
   "containerUser": "root",
-  "workspaceFolder": "/workspaces/my-agent",
+  "workspaceFolder": "/workspaces/program-requirement",
   "forwardPorts": []
 }
