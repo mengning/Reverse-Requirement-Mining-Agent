@@ -24,7 +24,9 @@ async function preserveIncompleteAttempt(output) {
   throw Error('发布回执存在但运行清单丢失；请先核对工单，不要重复提交');
 }
 
-export async function runOfficialPipeline(instance,output,repository,{env=process.env,request=fetch,run=runAgent,signal}={}) {
+export async function runOfficialPipeline(instance,output,repository,{
+  env=process.env,request=fetch,run=runAgent,signal,recoverIncomplete=false,
+}={}) {
   signal?.throwIfAborted();
   if(!/^[A-Za-z0-9._-]+__[A-Za-z0-9._-]+\.[0-9a-f]{7,40}$/.test(instance)) throw Error('官方实例标识无效');
   const config=publicationConfig(repository,env);
@@ -41,7 +43,7 @@ export async function runOfficialPipeline(instance,output,repository,{env=proces
     if(manifest && (manifest.instance!==instance || manifest.repository!==repository || manifest.url!==config.url))
       throw Error('已有运行材料属于其他程序或仓库');
     if(!manifest) {
-      await preserveIncompleteAttempt(output);
+      if(recoverIncomplete) await preserveIncompleteAttempt(output);
       signal?.throwIfAborted();
       await run(instance,output,env,{signal});
       signal?.throwIfAborted();

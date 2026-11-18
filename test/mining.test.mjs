@@ -72,6 +72,7 @@ test('a pre-publication failure preserves diagnostics and permits one successful
   let explorations = 0;
   let publications = 0;
   const options = {
+    recoverIncomplete: true,
     env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
     request: async (_url, request) => {
       if (request.method !== 'POST') return Response.json({full_name: repository, has_issues: true});
@@ -107,6 +108,7 @@ test('an existing publication receipt without a manifest prevents both rerunning
   const receipt = path.join(output, 'publication.json');
   await writeFile(receipt, '{"status":"submitting"}');
   await assert.rejects(runOfficialPipeline(instance, output, repository, {
+    recoverIncomplete: true,
     env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
     request: async (_url, request) => {
       assert.notEqual(request.method, 'POST');
@@ -116,6 +118,47 @@ test('an existing publication receipt without a manifest prevents both rerunning
   }), /发布回执存在/);
   assert.equal(await readFile(receipt, 'utf8'), '{"status":"submitting"}');
   assert.deepEqual(await readdir(state), ['19']);
+});
+
+test('standalone use does not move an existing output directory', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-existing-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, 'user-files');
+  await mkdir(output);
+  await writeFile(path.join(output, 'original.txt'), 'keep');
+  await assert.rejects(runOfficialPipeline(instance, output, repository, {
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async () => Response.json({full_name: repository, has_issues: true}),
+    run: async (_instance, directory) => mkdir(directory),
+  }), {code: 'EEXIST'});
+  assert.deepEqual(await readdir(state), ['user-files']);
+  assert.equal(await readFile(path.join(output, 'original.txt'), 'utf8'), 'keep');
+});
+
+test('a lost issue creation response stops replay without rerunning the model or posting again', async t => {
+  const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-lost-response-'));
+  t.after(() => rm(state, {recursive: true, force: true}));
+  const output = path.join(state, '19');
+  let explorations = 0;
+  let publications = 0;
+  const options = {
+    recoverIncomplete: true,
+    env: {DEVSTAR_URL: origin, GITHUB_SERVER_URL: origin, DEVSTAR_TOKEN: 'test-service-account-token'},
+    request: async (_url, request) => {
+      if (request.method !== 'POST') return Response.json({full_name: repository, has_issues: true});
+      publications++;
+      throw new Error('connection closed after submitting');
+    },
+    run: async (_instance, directory) => {
+      explorations++;
+      await mkdir(directory);
+      await writeFile(path.join(directory, 'issue.json'), JSON.stringify({title: 'Candidate', body: 'Evidence'}));
+    },
+  };
+  const attempt = () => runOfficialPipeline(instance, output, repository, options);
+  await assert.rejects(attempt(), /connection closed after submitting/);
+  await assert.rejects(attempt(), /Submission outcome is uncertain/);
+  assert.deepEqual({explorations, publications}, {explorations: 1, publications: 1});
 });
 
 test('native Agent Team delivery links the new issue from the source comment and acknowledges the event', async t => {

@@ -37,7 +37,7 @@ export function createHandler({catalog, pipeline, signal}) {
     const state = path.join(env.MINING_AGENT_STATE_DIR, String(repoID), String(event.event_id));
     const childEnv = Object.fromEntries(Object.entries(env).filter(([name]) =>
       /^(?:PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|TEMP|TMP|TMPDIR|LANG|LC_ALL|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|OPENJIUWEN_API_BASE|OPENJIUWEN_API_KEY|OPENJIUWEN_MODEL|MINING_PYTHON)$/i.test(name)));
-    const receipt = await pipeline(instance, state, repository, {signal, env: {
+    const receipt = await pipeline(instance, state, repository, {signal, recoverIncomplete: true, env: {
       ...childEnv, DEVSTAR_URL: platform.origin, GITHUB_SERVER_URL: platform.origin, DEVSTAR_TOKEN: credential,
       MINING_EXECUTION_LABEL: `devstar-mining-run=${randomUUID().replaceAll('-', '')}`,
     }});
