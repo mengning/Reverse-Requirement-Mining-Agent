@@ -1,0 +1,39 @@
+name: Agent Template CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  source-start:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start from a clean checkout
+        env:
+          AGENT_LAUNCH_KIND: job_runner
+          ADAPTER_CMD: node --test test/registration.test.mjs
+          DEVSTAR_RUNTIME_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVSTAR_RUNTIME_GIT_USERNAME: ${{ github.actor }}
+        run: sh .devstar/entrypoint.sh
+      - name: Verify example Agent registration contract
+        run: npm test
+
+  container-start:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build current Agent image
+        run: docker build -f .devstar/Dockerfile -t devstar-agent-template:test .
+      - name: Start current Agent image
+        env:
+          DEVSTAR_RUNTIME_GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVSTAR_RUNTIME_GIT_USERNAME: ${{ github.actor }}
+        run: |
+          docker run --rm \
+            -e DEVSTAR_RUNTIME_GIT_TOKEN \
+            -e DEVSTAR_RUNTIME_GIT_USERNAME \
+            -e AGENT_LAUNCH_KIND=job_runner \
+            -e 'ADAPTER_CMD=node --test test/registration.test.mjs' \
+            devstar-agent-template:test

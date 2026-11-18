@@ -1,0 +1,9 @@
+{
+  "name": "My Agent",
+  "image": "node:24-alpine",
+  "overrideCommand": true,
+  "remoteUser": "root",
+  "containerUser": "root",
+  "workspaceFolder": "/workspaces/my-agent",
+  "forwardPorts": []
+}

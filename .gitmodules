@@ -1,0 +1,4 @@
+[submodule ".devstar/agent-runtime"]
+	path = .devstar/agent-runtime
+	url = https://devstar.cn/devstar/agent-runtime.git
+	branch = main

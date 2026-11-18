@@ -1,0 +1,12 @@
+{
+  "id": "my_agent",
+  "display_name": "My Agent",
+  "description": "My custom agent for DevStar.",
+  "launch_kind": "subscription_service",
+  "subscriptions": ["agent_command"],
+  "capabilities": ["task_dispatch"],
+  "allowed_scopes": ["repository", "owner", "global"],
+  "default_delivery_mode": "single_best",
+  "default_bot_access_profile": "write",
+  "im_providers": []
+}
