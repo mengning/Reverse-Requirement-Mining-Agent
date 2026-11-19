@@ -2,7 +2,10 @@
   "name": "Requirements Mining Agent",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."
+    "context": "..",
+    "args": {
+      "MINING_PROBE_SOURCES": "1"
+    }
   },
   "overrideCommand": true,
   "remoteUser": "root",
