@@ -9,7 +9,8 @@
 | 配置 | 用途 |
 | --- | --- |
 | `DEVSTAR_AGENT_SCOPE_KIND=repository`、`DEVSTAR_AGENT_SCOPE_REPO_ID` | 由 Agent Team 指定仓库范围；事件必须来自同一仓库 ID |
-| `MINING_AGENT_REPOSITORY` | 目标仓库的完整名称（`OWNER/REPO`），与分派事件的仓库名称一致 |
+| `WORK_REPO_OWNER`、`WORK_REPO_NAME`、`WORK_REPO_ID` | 由 Agent Team 注入，自动识别绑定仓库，并校验仓库 ID |
+| `MINING_AGENT_REPOSITORY` | 独立运行时使用的仓库完整名称（`OWNER/REPO`）；若同时存在 Agent Team 绑定，必须与平台绑定一致 |
 | `MINING_AGENT_STATE_DIR` | Agent 私有的持久绝对路径；按仓库和事件隔离发布回执，重试不会重复建单 |
 | `OPENJIUWEN_API_BASE`、`OPENJIUWEN_MODEL`、`OPENJIUWEN_API_KEY` | 探索模型配置，密钥通过实例 Secrets 注入 |
 | `MINING_PYTHON` | 运行固定 Python 依赖的解释器；模板构建的镜像已配置 |

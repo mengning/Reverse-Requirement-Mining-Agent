@@ -6,16 +6,27 @@ const repoPattern = /^[\w.-]+\/[\w.-]+$/;
 const positiveInt = (value) => /^[1-9]\d*$/.test(String(value ?? '')) && Number.isSafeInteger(Number(value));
 
 export function validateRuntimeScope(env) {
-  if (env.DEVSTAR_AGENT_SCOPE_KIND !== 'repository' || !positiveInt(env.DEVSTAR_AGENT_SCOPE_REPO_ID) ||
-      !repoPattern.test(env.MINING_AGENT_REPOSITORY || '')) throw new Error('Mining requires an explicit repository scope');
+  const repoID = env.DEVSTAR_AGENT_SCOPE_REPO_ID;
+  if (env.DEVSTAR_AGENT_SCOPE_KIND !== 'repository' || !positiveInt(repoID)) {
+    throw new Error('Mining requires an explicit repository scope');
+  }
+  const explicit = env.MINING_AGENT_REPOSITORY;
+  if (env.WORK_REPO_OWNER || env.WORK_REPO_NAME || env.WORK_REPO_ID) {
+    const repository = `${env.WORK_REPO_OWNER || ''}/${env.WORK_REPO_NAME || ''}`;
+    if (!repoPattern.test(repository) || !positiveInt(env.WORK_REPO_ID) ||
+        Number(env.WORK_REPO_ID) !== Number(repoID) || (explicit && explicit !== repository)) {
+      throw new Error('Mining workspace does not match the repository scope');
+    }
+    return {repoID, repository};
+  }
+  if (!repoPattern.test(explicit || '')) throw new Error('Mining requires a bound repository name');
+  return {repoID, repository: explicit};
 }
 
 export function createHandler({catalog, pipeline, signal}) {
   const known = new Set(catalog);
   return async function handleEvent(event, env) {
-    const repository = env.MINING_AGENT_REPOSITORY;
-    const repoID = env.DEVSTAR_AGENT_SCOPE_REPO_ID;
-    validateRuntimeScope(env);
+    const {repository, repoID} = validateRuntimeScope(env);
     if (event.repository?.full_name !== repository ||
         Number(event.repository?.id) !== Number(repoID) || !positiveInt(event.event_id)) {
       throw new Error('Mining requires an event from the bound repository');

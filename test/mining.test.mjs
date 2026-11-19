@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {runOfficialPipeline} from '../mining/official-run.mjs';
 import {runDevstarAgentOnce} from '../.devstar/agent-runtime/src/index.mjs';
-import {createHandler} from '../src/handle-event.mjs';
+import {createHandler, validateRuntimeScope} from '../src/handle-event.mjs';
 import {createAdapter} from '../src/adapter.mjs';
 
 const instance = 'chmln__sd.87d1ba5';
@@ -21,6 +21,15 @@ const env = {
   MINING_AGENT_REPOSITORY: repository, DEVSTAR_TOKEN: 'instance-token-not-for-mining',
   GITHUB_TOKEN: 'unrelated-token', OPENJIUWEN_MODEL: 'fixture-model',
 };
+
+test('Agent Team workspace must agree with the platform scope and any explicit repository', () => {
+  const workspace = {...env, MINING_AGENT_REPOSITORY: '', WORK_REPO_OWNER: 'owner',
+    WORK_REPO_NAME: 'mining-lab', WORK_REPO_ID: '12'};
+  assert.deepEqual(validateRuntimeScope(workspace), {repository, repoID: '12'});
+  assert.throws(() => validateRuntimeScope({...workspace, WORK_REPO_ID: '13'}), /does not match/);
+  assert.throws(() => validateRuntimeScope({...workspace, MINING_AGENT_REPOSITORY: 'other/repo'}), /does not match/);
+  assert.throws(() => validateRuntimeScope({...workspace, DEVSTAR_AGENT_SCOPE_KIND: 'owner'}), /explicit repository scope/);
+});
 
 test('standard event invokes the real publisher once and reuses the receipt on replay', async t => {
   const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-'));
