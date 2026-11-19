@@ -4,7 +4,9 @@
     "dockerfile": "Dockerfile",
     "context": "..",
     "args": {
-      "MINING_PROBE_SOURCES": "1"
+      "MINING_APT_MIRROR": "https://mirrors.ustc.edu.cn/debian",
+      "MINING_APT_SECURITY_MIRROR": "https://mirrors.ustc.edu.cn/debian-security",
+      "MINING_PYPI_INDEX": "https://mirrors.ustc.edu.cn/pypi/simple"
     }
   },
   "overrideCommand": true,

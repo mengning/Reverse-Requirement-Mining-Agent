@@ -25,8 +25,8 @@
 
 镜像构建默认使用 Debian 和 PyPI 官方 HTTPS 源，可通过构建参数
 `MINING_APT_MIRROR`、`MINING_APT_SECURITY_MIRROR`、`MINING_PYPI_INDEX` 分别覆盖。
-当前试验分支在 DevContainer 构建参数中开启 `MINING_PROBE_SOURCES=1`：
-构建日志中的 `source-probe` 比较官方源和中科大镜像上的等量下载，`source-selected` 记录选源。
+当前试验分支的 DevContainer 构建参数显式指定中科大的普通源、安全更新源和 PyPI 源。
+可选的 `MINING_PROBE_SOURCES=1` 会比较普通 APT 源和 PyPI 源，`source-selected` 记录选源。
 手工指定源优先；两边测速都失败时使用官方源。Debian 安全更新源不参与自动切换。
 
 ```sh
