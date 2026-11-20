@@ -17,17 +17,18 @@ export function createSdPodExecutor({endpoint, token, request = fetch} = {}) {
   const url = privateProbeURL(endpoint);
   if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) throw Error('Missing short-lived probe credential');
   return async function execute({id, argv, stdin}, {signal} = {}) {
-    if (typeof id !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(id) || !Array.isArray(argv) || argv.length !== 3 || argv[0] !== '-F' ||
+    if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,84}$/.test(id) || !Array.isArray(argv) || argv.length !== 3 || argv[0] !== '-F' ||
         typeof stdin !== 'string' || Buffer.byteLength(stdin) > 1024 || !argv[1] ||
         argv.slice(1).some(arg => typeof arg !== 'string' || arg.startsWith('-') || arg.includes('\0') || Buffer.byteLength(arg) > 64)) {
       throw Error('Expected a bounded sd literal stdin probe');
     }
+    const requestId = /^[a-zA-Z0-9-]{1,64}$/.test(id) ? id : `probe-${hash(id).slice(0, 48)}`;
     const timeout = AbortSignal.timeout(8000);
     const response = await request(url, {method: 'POST', redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-      headers: {'content-type': 'application/json', authorization: `Bearer ${token}`}, body: JSON.stringify({id, argv, stdin})});
+      headers: {'content-type': 'application/json', authorization: `Bearer ${token}`}, body: JSON.stringify({id: requestId, argv, stdin})});
     if (!response.ok) throw Error(`sd Pod probe failed: HTTP ${response.status}`);
     const result = await response.json();
-    if (!result || result.id !== id || JSON.stringify(result.argv) !== JSON.stringify(argv) || result.stdin !== stdin ||
+    if (!result || result.id !== requestId || JSON.stringify(result.argv) !== JSON.stringify(argv) || result.stdin !== stdin ||
         result.sha256 !== SD_BINARY_SHA256 || result.uid !== 1000 || result.networkBlocked !== true ||
         !Number.isInteger(result.exitCode) || result.exitCode < 0 || result.exitCode > 255 ||
         typeof result.stdout !== 'string' || typeof result.stderr !== 'string' ||
@@ -64,7 +65,8 @@ export function createSdPodCollector(options) {
       const first = await execute(probe);
       const second = await execute(probe);
       records.push(first, second);
-      const observation = {...first, ...(JSON.stringify(first) !== JSON.stringify(second) ? {repeat_result: second} : {})};
+      const repeat = {stdout: second.stdout, stderr: second.stderr, exit_code: second.exit_code};
+      const observation = {...first, ...(JSON.stringify(first) !== JSON.stringify(second) ? {repeat_result: repeat} : {})};
       observations.push({...observation, sha256: hash(observation)});
     }
     const input = {task_id: plan.task_id, scope: plan.scope, documents, observations, features: plan.features,

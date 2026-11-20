@@ -230,11 +230,11 @@ export function renderRequirementIssue(input) {
       `为任务 ${inline(input.task_id)} 整理一份候选规格。路径${TARGET_DOCUMENT}；说明已有证据支持的行为与未验证边界。只整理需求，不修改实现代码。`,
       "",
     );
-    lines.push('<details>', '<summary>交付约束：先准备候选，创建 PR 需单独授权</summary>', '');
+    lines.push('<details>', '<summary>规格 PR 的交付范围</summary>', '');
     lines.push("- 不修改实现代码、测试、构建脚本、依赖或运行时配置；");
     lines.push("- 保留与本次需求无关的既有规格文件及条款原文，不做删除、重命名或改写；");
-    lines.push("- 先产出候选文档，收到单独的 PR 授权后再创建 PR；");
-    lines.push("- 不自动创建 PR，不合并任何变更，也不直接推送默认分支；");
+    lines.push("- 请委托 Spec Agent 核对已有规格；需要新增或更新时，在同一次已授权的委托中提交仅包含规格文档变更的评审 PR；");
+    lines.push("- 不合并任何变更，也不直接推送默认分支；");
     lines.push("- 本工单不预写 Spec 条款，也不提供预期官方答案；请依据下列公开证据独立整理。");
     lines.push('', '</details>', '');
     lines.push("> 本工单不声称覆盖程序的全部行为；未列出的边界仍需验证。");
