@@ -24,7 +24,7 @@
 
 ### 可选：独立 Pod 探测
 
-此分支的 DevStar 模板选择轻量 `pod-runner` 构建目标，不安装 Python 基线、PyPI 依赖或 Docker 客户端。若部署旧 Docker 执行方式，选择 `docker-runner` 构建目标；直接构建 Dockerfile 的默认目标不变。
+此分支的 DevStar 模板选择 `pod-runner` 构建目标，复用旧模板缓存的系统依赖层，但不安装或运行 Python 基线和 PyPI 依赖，也不启动 Docker 服务。若部署旧 Docker 执行方式，选择 `docker-runner` 构建目标；直接构建 Dockerfile 的默认目标不变。
 
 在已有受控探测 Pod 的实验实例上，把 `MINING_EXECUTION_BACKEND` 设为 `sd-pod`。此模式当前仅接受 `chmln__sd.87d1ba5` 的 `-F` 标准输入探测。实例需要以下私有配置，值不应提交到仓库：
 
