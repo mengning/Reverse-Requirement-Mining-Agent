@@ -359,7 +359,7 @@ export function renderRequirementIssue(input) {
       const questions = [...new Set(groups.map(group => group.missing_checks[0]).filter(Boolean))];
       body = [
         '## 目标', '',
-        `把任务 ${inline(input.task_id)} 的已观察行为整理为候选规格，供评审。先对照已有规格，再准备草稿；不修改实现代码或无关规格，创建 PR 需单独授权，不合并、不改默认分支。`, '',
+        `把任务 ${inline(input.task_id)} 的已观察行为整理为候选规格，供评审。请委托 Spec Agent 核对已有规格；需要变更时，在同一次已授权的委托中提交规格 PR。不修改实现代码、无关规格或默认分支，不合并。`, '',
         '## 范围', '',
         inline(input.scope || '仅限提供的公开材料和实测观察。'), '',
         '未探测的功能与输入组合不视为已验证。', '',
