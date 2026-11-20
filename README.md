@@ -24,7 +24,9 @@
 
 ### 可选：独立 Pod 探测
 
-默认执行方式不变。仅在已有受控探测 Pod 的实验实例上，把 `MINING_EXECUTION_BACKEND` 设为 `sd-pod`。此模式当前仅接受 `chmln__sd.87d1ba5` 的 `-F` 标准输入探测。实例需要以下私有配置，值不应提交到仓库：
+此分支的 DevStar 模板选择轻量 `pod-runner` 构建目标，不安装 Python 基线、PyPI 依赖或 Docker 客户端。若部署旧 Docker 执行方式，选择 `docker-runner` 构建目标；直接构建 Dockerfile 的默认目标不变。
+
+在已有受控探测 Pod 的实验实例上，把 `MINING_EXECUTION_BACKEND` 设为 `sd-pod`。此模式当前仅接受 `chmln__sd.87d1ba5` 的 `-F` 标准输入探测。实例需要以下私有配置，值不应提交到仓库：
 
 - `MINING_SD_POD_URL`：内部 Pod 的 `/v1/probe` 地址；`MINING_SD_POD_TOKEN`：短时探测凭证。
 - `MINING_SD_POD_TASK`：绝对路径，指向包含固定官方任务信息、探测范围和公开文档正文的 JSON。

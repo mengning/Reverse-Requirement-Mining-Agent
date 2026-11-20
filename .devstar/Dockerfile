@@ -1,4 +1,13 @@
-FROM node:24-bookworm-slim
+FROM node:24-bookworm-slim AS pod-runner
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+COPY . .
+ENTRYPOINT ["sh", ".devstar/entrypoint.sh"]
+
+FROM node:24-bookworm-slim AS docker-runner
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv docker.io \
     && rm -rf /var/lib/apt/lists/*

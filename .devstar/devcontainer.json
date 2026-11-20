@@ -2,7 +2,8 @@
   "name": "Requirements Mining Agent",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."
+    "context": "..",
+    "target": "pod-runner"
   },
   "overrideCommand": true,
   "remoteUser": "root",
