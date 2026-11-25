@@ -1,20 +1,13 @@
 import {readFile} from 'node:fs/promises';
+import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {requestRepoJSON, runDevstarAgent} from '../.devstar/agent-runtime/src/index.mjs';
 import {runOfficialPipeline} from '../mining/official-run.mjs';
 import {createHandler, validateRuntimeScope} from './handle-event.mjs';
 import {configurePodBackend, smokeConfiguredPod} from '../mining/pod/sd-pod-agent.mjs';
 import * as publisher from '../mining/src/publish.mjs';
 
 export function createAdapter(options) {
-  const handle = createHandler(options);
-  return async (event, env) => {
-    const result = await handle(event, env);
-    const number = event.body?.issue?.number;
-    if (Number.isSafeInteger(number) && number > 0 && !event.body.pull_request)
-      await requestRepoJSON(event, 'POST', `/issues/${number}/comments`, {body: result.summary}, env);
-    return result;
-  };
+  return createHandler(options);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
@@ -24,6 +17,14 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   }
   const env = podAgentEnvironment(process.env);
   validateRuntimeScope(env);
+  const runtime = env.DEVSTAR_AGENT_RUNTIME_PATH
+    ? pathToFileURL(path.resolve(env.DEVSTAR_AGENT_RUNTIME_PATH, 'src') + path.sep)
+    : new URL('../.devstar/agent-runtime/src/', import.meta.url);
+  const {runDevstarAgent} = await import(new URL('index.mjs', runtime));
+  const {postRuntimeResult: postResult} = await import(new URL('autonomous-task.mjs', runtime));
+  const {NATIVE_RESULTS_FEATURE} = await import(new URL('native-result.mjs', runtime));
+  if (NATIVE_RESULTS_FEATURE !== 'native-results/v1')
+    throw new Error('A shared Agent Runtime with native-results/v1 is required');
   const {tasks} = JSON.parse(await readFile(new URL('../mining/tasks/official-catalog.json', import.meta.url), 'utf8'));
   const backend = env.MINING_EXECUTION_BACKEND === 'sd-pod'
     ? await configurePodBackend(env, publisher)
@@ -36,7 +37,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   };
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
   await runDevstarAgent({signal: controller.signal, handleEvent: createAdapter({
-    ...backend, signal: controller.signal,
+    ...backend, postResult, signal: controller.signal,
   })}, env);
 }
 

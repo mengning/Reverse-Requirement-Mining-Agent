@@ -1,7 +1,7 @@
 {
   "id": "requirements-mining",
   "display_name": "Requirements Mining Agent",
-  "description": "Explore one ProgramBench reference program and create one requirements issue.",
+  "description": "Explore one ProgramBench reference program and publish a linked requirements Issue.",
   "launch_kind": "subscription_service",
   "subscriptions": ["agent_command"],
   "capabilities": ["task_dispatch"],
@@ -12,13 +12,13 @@
     "schema_version": "v1",
     "name": "requirements-mining",
     "display_name": "Requirements Mining Agent",
-    "description": "Collects black-box evidence for one selected reference program and publishes a candidate requirements issue.",
+    "description": "Collects black-box evidence and creates a requirements Issue. Input can come from a mining task Issue or repository ChatBot.",
     "capabilities": [
       {
         "id": "requirements-mining",
         "title": "Black-box requirements mining",
-        "description": "Explore one ProgramBench instance and create an ordinary requirements issue.",
-        "when_to_use": "Only when a user explicitly asks to explore a named ProgramBench instance. Do not select for reviewing or drafting a specification, or follow-ups on a generated requirements issue.",
+        "description": "Resolve a ProgramBench program name, run it, and publish a new requirements Issue with real inputs, outputs, and exit codes. Honor exact user-specified probes. Link back to an originating mining task Issue; close that task only when its author permits it. Does not create specification PRs.",
+        "when_to_use": "Select when an Issue or ChatBot asks to explore one ProgramBench program. Name it as 'ProgramBench program NAME' or use its exact ID if already provided. A unique program name is enough. Do not route an Issue that already contains mining evidence for specification authoring back to mining.",
         "required_context": ["repository", "goal"]
       }
     ],
@@ -26,7 +26,7 @@
       {
         "name": "/mine",
         "capability": "requirements-mining",
-        "description": "Explore exactly one ProgramBench instance: /mine owner__program.short-revision"
+        "description": "Explore one ProgramBench program by name or exact catalog ID."
       }
     ]
   }

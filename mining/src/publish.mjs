@@ -77,14 +77,25 @@ export async function reserveReceipt(receiptFile,binding) {
   }
 }
 
-export async function publishIssue(issue,config,receiptFile,request=fetch) {
+export function safeIssuePayload(issue,config) {
   if (typeof issue?.title!=='string' || !issue.title.trim() || typeof issue.body!=='string' ||
       !issue.body.trim() || Buffer.byteLength(issue.body)>50000) throw Error('Invalid ordinary issue');
   const secrets=new Set(Array.isArray(config.secrets)?config.secrets:[]);
   if (typeof config.token==='string' && config.token) secrets.add(config.token);
   if ([...secrets].some(secret=>secret && (issue.title.includes(secret) || issue.body.includes(secret))))
-    throw Error('发布材料包含敏感环境值（可能是 token）；已拒绝建单，请检查标题和正文。');
-  const payload={title:issue.title,body:issue.body};
+    throw Error('发布材料包含敏感环境值（可能是 token）；已拒绝发布，请检查标题和正文。');
+  return {title:issue.title,body:issue.body};
+}
+
+export function withMiningSource(issue,config,number) {
+  if (number === undefined) return issue;
+  if (!Number.isSafeInteger(number) || number <= 0) throw Error('Invalid mining source issue');
+  const url = `${config.url}/${config.repository}/issues/${number}`;
+  return {...issue,body:`来源：[需求挖掘任务 #${number}](${url})。\n\n${issue.body}`};
+}
+
+export async function publishIssue(issue,config,receiptFile,request=fetch) {
+  const payload=safeIssuePayload(issue,config);
   const binding={url:config.url,repository:config.repository,input_sha256:hash(payload)};
   let prior;
   try {

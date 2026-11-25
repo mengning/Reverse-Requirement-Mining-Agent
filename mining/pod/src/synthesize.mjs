@@ -101,19 +101,22 @@ export async function synthesize(input, planner, {correctOnce=false}={}) {
 
 const inline = value=>String(value).replace(/[\\[\]*_`|#!]/g,c=>`\\${c}`).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\s+/g,' ');
 export function renderSynthesis(result) {
+  const sampledRuns = group => group.scenarios.filter(run => !run.unsupported);
+  const sampledEvidence = group => {
+    const runs = sampledRuns(group);
+    return runs.length
+      ? `仅列出本次实测：${runs.map(run => inline(run.id)).join('、')}。行为以对应的输入、输出和退出码为准。`
+      : '没有本组实测；文档声明不等于运行结果。';
+  };
   const lines=['## 从观察归纳的候选需求','',
-    '以下是待评审的解释，不是已确认规则。文档、样例与推断分别列出；引用校验不等于语义正确。','',
-    '| 候选功能 | 要描述的行为（待评审） |', '| --- | --- |',
-    ...result.groups.map(g=>{const full=g.candidate_requirement.replace(/^候选需求[：:]\s*/,''); const chars=Array.from(full);
-      return `| ${inline(g.title)} | ${inline(chars.length>120?chars.slice(0,120).join('')+'…（完整表述见下方）':full)} |`;}),'',
-    '逐组展开可查看适用条件、证据和还需验证的问题。所有条目仍是候选，不是已验收规则；未验证项也不是自动执行命令。',''];
+    '| 候选功能 | 本次证据 |', '| --- | --- |',
+    ...result.groups.map(g=>`| ${inline(g.title)} | ${sampledRuns(g).length} 条实测（见下方） |`),''];
   for (const g of result.groups) {
     lines.push('<details>',`<summary>${inline(g.title)}：依据与待验证项</summary>`,'',
-      `**候选需求：** ${inline(g.candidate_requirement.replace(/^候选需求[：:]\s*/,''))}`,'',
-      `**适用条件：** ${g.conditions.map(inline).join('；')}`,'',
+      `**候选适用范围（待评审）：** ${g.conditions.map(inline).join('；')}`,'',
       '| 依据层次 | 内容 |','| --- | --- |',
       `| 文档解释（待复核） | ${inline(g.document_interpretation)} |`,
-      `| 样例归纳（仅限所引观察） | ${inline(g.observed_summary)} |`,
+      `| 实测样例 | ${sampledEvidence(g)} |`,
       `| 待验证推断 | ${inline(g.inference)} |`,'',
       '**还需验证：**',...g.missing_checks.map(x=>`- ${inline(x)}`),'');
     if(g.conflicts.length) lines.push('**文档与观察的待确认点（不等于已确认冲突）：**',...g.conflicts.map(x=>`- ${inline(x)}`),'');

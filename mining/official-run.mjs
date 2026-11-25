@@ -3,7 +3,7 @@ import {lstat, mkdir, open, readFile, rename, unlink, writeFile} from 'node:fs/p
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {hash} from './src/hash.mjs';
-import {checkRepository, publicationConfig, publishIssue} from './src/publish.mjs';
+import {checkRepository, publicationConfig, publishIssue, safeIssuePayload, withMiningSource} from './src/publish.mjs';
 import {runMiningProcess} from './src/workflow-lifecycle.mjs';
 
 const root=path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +25,7 @@ async function preserveIncompleteAttempt(output) {
 }
 
 export async function runOfficialPipeline(instance,output,repository,{
-  env=process.env,request=fetch,run=runAgent,signal,recoverIncomplete=false,
+  env=process.env,request=fetch,run=runAgent,signal,recoverIncomplete=false,reportOnly=false,sourceIssue,
 }={}) {
   signal?.throwIfAborted();
   if(!/^[A-Za-z0-9._-]+__[A-Za-z0-9._-]+\.[0-9a-f]{7,40}$/.test(instance)) throw Error('官方实例标识无效');
@@ -54,7 +54,8 @@ export async function runOfficialPipeline(instance,output,repository,{
     const issue=JSON.parse(await readFile(path.join(output,'issue.json'),'utf8'));
     if(hash(issue)!==manifest.issue_sha256) throw Error('工单材料已改变，请核对后重新运行');
     signal?.throwIfAborted();
-    return await publishIssue(issue,config,path.join(output,'publication.json'),request);
+    if (reportOnly) return {reportBody: safeIssuePayload(issue,config).body};
+    return await publishIssue(withMiningSource(issue,config,sourceIssue),config,path.join(output,'publication.json'),request);
   } finally {await lock.close();await unlink(output+'.official-lock');}
 }
 

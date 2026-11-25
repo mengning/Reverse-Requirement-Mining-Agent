@@ -218,6 +218,7 @@ export function renderRequirementIssue(input) {
   }
 
   const discovered = data.feature_origin === 'model-discovery';
+  const fixed = data.feature_origin === 'explicit-probes';
 
   // The only parts allowed to shrink near the byte limit are the folded
   // documentation and per-field observation excerpts; everything else must fit
@@ -254,9 +255,10 @@ export function renderRequirementIssue(input) {
       if (synthesis.input_sha256 !== data.synthesis.input_sha256) throw new Error('Synthesis evidence snapshot changed');
       lines.push(renderSynthesis(synthesis), '', '<details>', '<summary>原始探索方向（不是独立功能数量）</summary>', '');
     }
-    lines.push(discovered ? "## 文档驱动发现的功能清单" : "## 作者整理的功能清单", "");
+    lines.push(fixed ? "## 工单指定的固定探测" : discovered ? "## 文档驱动发现的功能清单" : "## 作者整理的功能清单", "");
     lines.push(
-      discovered ? "以下条目由模型根据公开文档提出，经原文引用校验。功能描述仍需复核；有观察编号只表示执行过对应样例，不证明普遍成立；没有观察编号的条目仅有文档依据。未覆盖全部功能与输入。" : "以下条目由作者根据公开证据手工整理，用于组织需求，不是实际观测结果，也不代表完整覆盖。功能是否成立应以“已观察的输入与输出”和“尚未验证的边界”为准。",
+      fixed ? "与工单逐项核对后原样执行参数和标准输入。模型只归纳结果，不生成或替换探测输入。"
+        : discovered ? "以下条目由模型根据公开文档提出，经原文引用校验。功能描述仍需复核；有观察编号只表示执行过对应样例，不证明普遍成立；没有观察编号的条目仅有文档依据。未覆盖全部功能与输入。" : "以下条目由作者根据公开证据手工整理，用于组织需求，不是实际观测结果，也不代表完整覆盖。功能是否成立应以“已观察的输入与输出”和“尚未验证的边界”为准。",
       "",
     );
     if (features.length === 0) {
