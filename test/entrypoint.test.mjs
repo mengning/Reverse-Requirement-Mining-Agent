@@ -45,3 +45,16 @@ test("CI passes its Git token through the dedicated Runtime credential", async (
   assert.match(workflow, /-e DEVSTAR_RUNTIME_GIT_TOKEN/);
   assert.doesNotMatch(workflow, /DEVSTAR_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });
+
+test("the Pod template reuses system dependencies without installing the Python baseline", async () => {
+  const config = JSON.parse(await readFile(new URL("../.devstar/devcontainer.json", import.meta.url), "utf8"));
+  const dockerfile = await readFile(new URL("../.devstar/Dockerfile", import.meta.url), "utf8");
+  const [shared, pod, legacy] = dockerfile.split(/^FROM system-deps AS (?:pod-runner|docker-runner)$/m);
+  assert.equal(config.build.target, "pod-runner");
+  assert.match(shared, /^FROM .* AS system-deps$/m);
+  assert.match(shared, /apt-get install/);
+  assert.doesNotMatch(shared + pod, /pip install|requirements-baseline/);
+  assert.doesNotMatch(pod + legacy, /apt-get install/);
+  assert.match(pod, /ENTRYPOINT.*\.devstar\/entrypoint\.sh/);
+  assert.match(legacy, /pip install/);
+});
