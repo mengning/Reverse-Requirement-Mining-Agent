@@ -3,7 +3,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {runOfficialPipeline} from '../mining/official-run.mjs';
 import {createHandler, validateRuntimeScope} from './handle-event.mjs';
-import {configurePodBackend, smokeConfiguredPod} from '../mining/pod/sd-pod-agent.mjs';
+import {configurePinnedStdinBackend, configurePodBackend, smokeConfiguredPod} from '../mining/pod/sd-pod-agent.mjs';
 import * as publisher from '../mining/src/publish.mjs';
 
 export function createAdapter(options) {
@@ -28,7 +28,8 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   const {tasks} = JSON.parse(await readFile(new URL('../mining/tasks/official-catalog.json', import.meta.url), 'utf8'));
   const backend = env.MINING_EXECUTION_BACKEND === 'sd-pod'
     ? await configurePodBackend(env, publisher)
-    : {catalog: tasks.map(task => task.instance_id), pipeline: runOfficialPipeline};
+    : env.MINING_EXECUTION_BACKEND === 'pinned-stdin-pod' ? await configurePinnedStdinBackend(env, publisher)
+      : {catalog: tasks.map(task => task.instance_id), pipeline: runOfficialPipeline};
   const controller = new AbortController();
   const stop = () => {
     controller.abort();
@@ -43,7 +44,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
 
 function podAgentEnvironment(env) {
   if (!env.MINING_EXECUTION_BACKEND || env.MINING_EXECUTION_BACKEND === 'docker') return env;
-  if (env.MINING_EXECUTION_BACKEND !== 'sd-pod') throw Error('Unknown mining execution backend');
+  if (!['sd-pod', 'pinned-stdin-pod'].includes(env.MINING_EXECUTION_BACKEND)) throw Error('Unknown mining execution backend');
   const {WORK_REPO_ID, WORK_REPO_OWNER, WORK_REPO_NAME} = env;
   if (!/^[1-9]\d*$/.test(WORK_REPO_ID || '') || !/^[\w.-]+$/.test(WORK_REPO_OWNER || '') ||
       !/^[\w.-]+$/.test(WORK_REPO_NAME || '')) throw Error('Pod backend requires a bound DevStar workspace');

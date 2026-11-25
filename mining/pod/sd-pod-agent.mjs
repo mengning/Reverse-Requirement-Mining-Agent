@@ -4,7 +4,8 @@ import {discover} from './src/discover.mjs';
 import {modelPlanner} from './src/planner.mjs';
 import {renderRequirementIssue} from './src/render.mjs';
 import {synthesize} from './src/synthesize.mjs';
-import {createSdPodCollector, createSdPodExecutor, readSdPodDocuments} from './src/sd-pod-execution.mjs';
+import {createSdPodCollector, createSdPodExecutor, createStdinPodCollector, createStdinPodExecutor, readSdPodDocuments} from './src/sd-pod-execution.mjs';
+import {hash, selectTask} from './src/collect.mjs';
 import {validateProbe} from './src/task.mjs';
 import {safeIssuePayload, withMiningSource} from '../src/publish.mjs';
 
@@ -53,8 +54,9 @@ function verifyFixedObservations(fixedProbes, observations) {
   })) throw Error('Fixed probes did not execute with the exact requested arguments and input');
 }
 
-export function createPodPipeline({task, probe, runSmoke = smoke, plannerFactory = modelPlanner, publisher}) {
-  const snapshot = readSdPodDocuments({...task, exploration: {max_rounds: 1, max_probes_per_round: 5}});
+export function createPodPipeline({task, probe, runSmoke = smoke, plannerFactory = modelPlanner, publisher,
+  readDocuments = readSdPodDocuments, createExecutor = createSdPodExecutor, createCollector = createSdPodCollector}) {
+  const snapshot = readDocuments({...task, exploration: {max_rounds: 1, max_probes_per_round: 5}});
   return async (instance, state, repository, {env, signal, fixedProbes = [], reportOnly = false, sourceIssue} = {}) => {
     if (instance !== snapshot.task.task_id || signal?.aborted) throw Error('Unexpected or canceled mining task');
     if (fixedProbes.length > 5) throw Error('Fixed probe budget exceeded');
@@ -83,7 +85,7 @@ export function createPodPipeline({task, probe, runSmoke = smoke, plannerFactory
     let proposalCount = 0;
     let input;
     if (fixedProbes.length) {
-      const execute = createSdPodExecutor(probe);
+      const execute = createExecutor(probe);
       const observations = [];
       for (const fixed of fixedProbes) observations.push(await execute(fixed, {signal}));
       verifyFixedObservations(fixedProbes, observations);
@@ -95,7 +97,7 @@ export function createPodPipeline({task, probe, runSmoke = smoke, plannerFactory
         unexplored: ['仅执行工单明确指定的输入，其他输入及行为未探测。'],
       };
     } else {
-      ({input} = await discover({...snapshot, execute: createSdPodCollector(probe), checkpointFile: null,
+      ({input} = await discover({...snapshot, execute: createCollector(probe), checkpointFile: null,
         planner: async (messages, options) => {
           const proposal = await planner(messages, options);
           await writeFile(path.join(state, `discovery-proposal-${++proposalCount}.json`), JSON.stringify(proposal), {flag: 'wx', mode: 0o600});
@@ -124,3 +126,39 @@ export async function configurePodBackend(env, publisher) {
 }
 
 export const smokeConfiguredPod = env => smoke(podOptions(env));
+
+function readPinnedStdinDocuments(raw) {
+  const task = selectTask(raw);
+  if (task.profile !== 'cli-stdin/v1' || !task.argument_policy.allowed_vectors?.length || task.resources?.length ||
+      task.argument_policy.readonly_paths?.length || task.documents.some(doc => !doc.text)) {
+    throw Error('Pinned Pod mode requires inline public documents and explicit stdin argument vectors');
+  }
+  return {task, documents: task.documents.map(({id, text}) => ({id, text, sha256: hash(text)})), records: []};
+}
+
+export function createPinnedStdinBackend({task, probe, binarySha256, smokeCase, publisher}) {
+  const {task: validated} = readPinnedStdinDocuments(task);
+  const createExecutor = options => createStdinPodExecutor({...options, binarySha256, validate(input) {
+    validateProbe(input, validated);
+  }});
+  const execute = createExecutor(probe);
+  validateProbe(smokeCase, validated);
+  const runSmoke = async () => {
+    const observed = await execute(smokeCase);
+    if (observed.stdout !== smokeCase.stdout || observed.stderr !== '' || observed.exit_code !== 0) {
+      throw Error('Pinned stdin probe preflight did not match');
+    }
+    return [observed];
+  };
+  return {catalog: [validated.task_id], supportsFixedProbes: true, pipeline: createPodPipeline({task, probe, publisher,
+    readDocuments: readPinnedStdinDocuments, createExecutor, runSmoke,
+    createCollector: options => createStdinPodCollector(createExecutor(options), readPinnedStdinDocuments,
+      '实测只覆盖清单指定的程序版本、固定参数和所列标准输入；未测试输入不计为已验证。')})};
+}
+
+export async function configurePinnedStdinBackend(env, publisher) {
+  if (!path.isAbsolute(env.MINING_STDIN_TASK || '')) throw Error('Expected an absolute public task manifest path');
+  return createPinnedStdinBackend({task: JSON.parse(await readFile(env.MINING_STDIN_TASK, 'utf8')),
+    probe: {endpoint: env.MINING_STDIN_PROBE_URL, token: env.MINING_STDIN_PROBE_TOKEN},
+    binarySha256: env.MINING_STDIN_BINARY_SHA256, smokeCase: JSON.parse(env.MINING_STDIN_SMOKE), publisher});
+}

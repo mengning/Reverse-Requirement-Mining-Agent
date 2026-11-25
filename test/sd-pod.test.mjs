@@ -4,11 +4,26 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {createSdPodExecutor, SD_BINARY_SHA256} from '../mining/pod/src/sd-pod-execution.mjs';
-import {createPodPipeline, keepDocumentLinkedProbes, smoke} from '../mining/pod/sd-pod-agent.mjs';
+import {createPinnedStdinBackend, createPodPipeline, keepDocumentLinkedProbes, smoke} from '../mining/pod/sd-pod-agent.mjs';
 import {readFixedProbes} from '../src/fixed-probes.mjs';
 
 const endpoint = 'http://10.0.0.8:30000/v1/probe';
 const token = 'a'.repeat(48);
+
+test('pinned stdin backend allows only manifest arguments before any model or network activity', async () => {
+  const task = {task_id: 'sample__json.0123456', image: 'sha256:' + 'f'.repeat(64), executable: '/workspace/executable',
+    scope: 'One stdin input', profile: 'cli-stdin/v1', documents: [{id: 'DOC-public', text: 'Read JSON from stdin.'}],
+    argument_policy: {min_args: 1, max_args: 1, allowed_vectors: [['-m']]}};
+  const options = {task, probe: {endpoint, token, request() { assert.fail('out-of-scope network request'); }},
+    binarySha256: 'b'.repeat(64), smokeCase: {id: 'OBS-smoke', argv: ['-m'], stdin: '{}', stdout: 'ok'}};
+  const backend = createPinnedStdinBackend(options);
+  assert.deepEqual(backend.catalog, [task.task_id]);
+  await assert.rejects(backend.pipeline(task.task_id, null, 'owner/repo', {
+    fixedProbes: [{id: 'OBS-bad', argv: ['--unknown'], stdin: '{}'}],
+  }), /Arguments outside task policy/);
+  assert.throws(() => createPinnedStdinBackend({...options, task: {...task, argument_policy: {min_args: 1, max_args: 1}}}),
+    /explicit stdin argument vectors/);
+});
 
 test('smoke runs both probes and rejects changed evidence before mining', async () => {
   const request = async (_url, options) => {

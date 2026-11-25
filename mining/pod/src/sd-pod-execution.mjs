@@ -14,26 +14,34 @@ function privateProbeURL(endpoint) {
 }
 
 export function createSdPodExecutor({endpoint, token, request = fetch} = {}) {
-  const url = privateProbeURL(endpoint);
-  if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) throw Error('Missing short-lived probe credential');
-  return async function execute({id, argv, stdin}, {signal} = {}) {
+  return createStdinPodExecutor({endpoint, token, request, binarySha256: SD_BINARY_SHA256, validate({id, argv, stdin}) {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,84}$/.test(id) || !Array.isArray(argv) || argv.length !== 3 || argv[0] !== '-F' ||
         typeof stdin !== 'string' || Buffer.byteLength(stdin) > 1024 || !argv[1] ||
         argv.slice(1).some(arg => typeof arg !== 'string' || arg.startsWith('-') || arg.includes('\0') || Buffer.byteLength(arg) > 64)) {
       throw Error('Expected a bounded sd literal stdin probe');
     }
+  }});
+}
+
+export function createStdinPodExecutor({endpoint, token, request = fetch, binarySha256, validate}) {
+  const url = privateProbeURL(endpoint);
+  if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) throw Error('Missing short-lived probe credential');
+  if (!/^[a-f0-9]{64}$/.test(binarySha256 || '')) throw Error('Expected a pinned executable checksum');
+  return async function execute(probe, {signal} = {}) {
+    validate(probe);
+    const {id, argv, stdin} = probe;
     const requestId = /^[a-zA-Z0-9-]{1,64}$/.test(id) ? id : `probe-${hash(id).slice(0, 48)}`;
     const timeout = AbortSignal.timeout(8000);
     const response = await request(url, {method: 'POST', redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers: {'content-type': 'application/json', authorization: `Bearer ${token}`}, body: JSON.stringify({id: requestId, argv, stdin})});
-    if (!response.ok) throw Error(`sd Pod probe failed: HTTP ${response.status}`);
+    if (!response.ok) throw Error(`stdin Pod probe failed: HTTP ${response.status}`);
     const result = await response.json();
     if (!result || result.id !== requestId || JSON.stringify(result.argv) !== JSON.stringify(argv) || result.stdin !== stdin ||
-        result.sha256 !== SD_BINARY_SHA256 || result.uid !== 1000 || result.networkBlocked !== true ||
+        result.sha256 !== binarySha256 || result.uid !== 1000 || result.networkBlocked !== true ||
         !Number.isInteger(result.exitCode) || result.exitCode < 0 || result.exitCode > 255 ||
         typeof result.stdout !== 'string' || typeof result.stderr !== 'string' ||
         Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr) > 131072) {
-      throw Error('sd Pod did not return valid evidence for the requested probe');
+      throw Error('stdin Pod did not return valid evidence for the requested probe');
     }
     return {id, argv, stdin, stdout: result.stdout, stderr: result.stderr, exit_code: result.exitCode,
       executable_sha256: result.sha256, execution: 'devstar-pod', network_blocked: true, uid: result.uid};
@@ -50,13 +58,17 @@ export function readSdPodDocuments(raw) {
 }
 
 export function createSdPodCollector(options) {
-  const execute = createSdPodExecutor(options);
+  return createStdinPodCollector(createSdPodExecutor(options), readSdPodDocuments,
+    '仅覆盖固定官方 sd 二进制的字面标准输入探测，未使用官方完整根文件系统。');
+}
+
+export function createStdinPodCollector(execute, readDocuments, scopeNote) {
   let remaining = 8;
   return async function collectFromSdPod(raw) {
     const plan = selectPlan(raw);
-    const {documents} = readSdPodDocuments(plan);
+    const {documents} = readDocuments(plan);
     if (plan.probes.length > remaining || plan.probes.some(probe => probe.file_text !== undefined)) {
-      throw Error('sd Pod mode only supports up to eight stdin probes per run');
+      throw Error('Pod mode only supports up to eight stdin probes per run');
     }
     remaining -= plan.probes.length;
     const observations = [];
@@ -70,7 +82,7 @@ export function createSdPodCollector(options) {
       observations.push({...observation, sha256: hash(observation)});
     }
     const input = {task_id: plan.task_id, scope: plan.scope, documents, observations, features: plan.features,
-      interaction: {profile: plan.profile}, unexplored: ['仅覆盖固定官方 sd 二进制的字面标准输入探测，未使用官方完整根文件系统。',
+      interaction: {profile: plan.profile}, unexplored: [scopeNote,
         ...observations.filter(o => o.repeat_result).map(o => `${o.id} 两次结果不同，不视为稳定行为。`)]};
     return {input, provenance: {plan, plan_sha256: hash(plan), input_sha256: hash(input), records,
       repeats: 2, official_answers_supplied: false, spec_candidate_supplied: false}};
