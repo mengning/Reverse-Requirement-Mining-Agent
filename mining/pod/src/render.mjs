@@ -342,13 +342,16 @@ export function renderRequirementIssue(input) {
       lines.push('</details>', '');
     }
 
+    // Discovery hypotheses predate execution. Only post-execution synthesis
+    // can describe gaps once the issue carries synthesized evidence.
+    const finalGaps = data.synthesis ? data.synthesis.groups.flatMap(group => group.missing_checks) : unexplored;
     lines.push("## 尚未验证的边界", "");
-    if (unexplored.length === 0) {
+    if (finalGaps.length === 0) {
       lines.push("- 输入未列出明确的未探索项；这只是作者记录的空缺清单，不代表已覆盖全部边界。", "");
     } else {
       lines.push('以下内容没有得到本次探测证明；不表示程序不支持，也不是现在要自动执行的任务。', '');
       if (data.synthesis) lines.push('每组候选需求中的“还需验证”列出该组仍缺失的输入类型、边界或文档解释，不视为已经执行。', '');
-      for (const item of [...new Set(unexplored)]) {
+      for (const item of [...new Set(finalGaps)]) {
         lines.push(`- ${inline(item)}`);
       }
       lines.push("");
