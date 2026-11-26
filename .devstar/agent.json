@@ -17,7 +17,7 @@
       {
         "id": "requirements-mining",
         "title": "Black-box requirements mining",
-        "description": "Resolve a ProgramBench program name, run it, and publish a new requirements Issue with real inputs, outputs, and exit codes. Honor exact user-specified probes. Link back to an originating mining task Issue; close that task only when its author permits it. Does not create specification PRs.",
+        "description": "Resolve a ProgramBench program name in the official catalog, explore its official reference program, and publish a new requirements Issue with real inputs, outputs, and exit codes. This exploration mode does not accept fixed probe vectors. Link back to an originating mining task Issue; close that task only when its author permits it. Does not create specification PRs.",
         "when_to_use": "Select when an Issue or ChatBot asks to explore one ProgramBench program. Name it as 'ProgramBench program NAME' or use its exact ID if already provided. A unique program name is enough. Do not route an Issue that already contains mining evidence for specification authoring back to mining.",
         "required_context": ["repository", "goal"]
       }

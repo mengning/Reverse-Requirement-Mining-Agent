@@ -66,8 +66,7 @@ export function validateRuntimeScope(env) {
       !repoPattern.test(env.MINING_AGENT_REPOSITORY || '')) throw new Error('Mining requires an explicit repository scope');
 }
 
-export function createHandler({catalog, pipeline, signal, supportsFixedProbes = false, readIssue = requestRepoJSON,
-  postResult, reportOnly = false}) {
+export function createHandler({catalog, pipeline, signal, readIssue = requestRepoJSON, postResult}) {
   const known = new Set(catalog);
   const aliases = new Map();
   for (const id of known) {
@@ -101,23 +100,19 @@ export function createHandler({catalog, pipeline, signal, supportsFixedProbes = 
     }
     const credential = event.credentials?.service_account?.token;
     if (!String(credential ?? '').trim()) throw new Error('The delegated event has no service-account credential');
-    let fixedProbes = [];
     const chat = isChatDelegation(event.body);
     const sourceNumber = chat ? null : event.body.issue?.number;
     let source;
-    if (reportOnly && (!positiveInt(sourceNumber) || event.body.pull_request))
-      return {status: 'input_required', summary: '请在要继续处理的原工单上委托需求挖掘。'};
     if (positiveInt(sourceNumber) && !event.body.pull_request) {
       source = await readIssue(event, 'GET', `/issues/${Number(sourceNumber)}`, undefined, env);
       if (Number(source?.number) !== Number(sourceNumber) || typeof source.body !== 'string' || source.pull_request)
         throw new Error('Cannot verify the source issue');
       try {
-        fixedProbes = readFixedProbes(source.body);
+        if (readFixedProbes(source.body).length)
+          return {status: 'input_required', summary: '官方探索运行器不保证固定参数和输入原样执行。未运行探测或建单。'};
       } catch (error) {
         return {status: 'input_required', summary: error.message};
       }
-      if (fixedProbes.length && !supportsFixedProbes)
-        return {status: 'input_required', summary: '当前执行环境不能保证固定参数和输入原样执行。未运行探测或建单。'};
     }
     if (!path.isAbsolute(env.MINING_AGENT_STATE_DIR || '')) throw new Error('MINING_AGENT_STATE_DIR must be an absolute persistent path');
     const state = path.join(env.MINING_AGENT_STATE_DIR, String(repoID), String(event.event_id));
@@ -132,15 +127,10 @@ export function createHandler({catalog, pipeline, signal, supportsFixedProbes = 
     const childEnv = Object.fromEntries(Object.entries(env).filter(([name]) =>
       /^(?:PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|TEMP|TMP|TMPDIR|LANG|LC_ALL|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|OPENJIUWEN_API_BASE|OPENJIUWEN_API_KEY|OPENJIUWEN_MODEL|MINING_PYTHON|MINING_OFFICIAL_IMAGE_ID|MINING_OFFICIAL_LAB_LABEL|MINING_OFFICIAL_RECOVERY_SOURCE|MINING_SCOPE)$/i.test(name)));
     const sourceIssue = isIssueDelegation(event.body) ? Number(sourceNumber) : undefined;
-    const receipt = await pipeline(instance, state, repository, {signal, fixedProbes, reportOnly, sourceIssue, recoverIncomplete: true, env: {
+    const receipt = await pipeline(instance, state, repository, {signal, sourceIssue, recoverIncomplete: true, env: {
       ...childEnv, DEVSTAR_URL: platform.origin, GITHUB_SERVER_URL: platform.origin, DEVSTAR_TOKEN: credential,
       MINING_EXECUTION_LABEL: `devstar-mining-run=${randomUUID().replaceAll('-', '')}`,
     }});
-    if (reportOnly) {
-      if (typeof receipt.reportBody !== 'string' || !receipt.reportBody.trim() || Buffer.byteLength(receipt.reportBody) > 50000)
-        throw new Error('Invalid mining evidence for the source issue');
-      return {summary: '## 需求挖掘结果\n\n' + receipt.reportBody};
-    }
     const issue = new URL(receipt.issue_url);
     if (!positiveInt(receipt.number) || receipt.number === sourceIssue || issue.origin !== platform.origin ||
         issue.pathname !== `/${repository}/issues/${receipt.number}`) {

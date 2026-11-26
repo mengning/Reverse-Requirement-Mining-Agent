@@ -57,7 +57,8 @@ test('standard event invokes the real publisher once and reuses the receipt on r
 
 test('invalid or ambiguous requests never invoke mining', async () => {
   const handle = createHandler({catalog: [instance], pipeline: () => assert.fail('pipeline must not run')});
-  for (const command of ['/mine', `/mine ${instance} extra`, '/mine another__program.0000000', '/mine https://example.com/repo']) {
+  for (const command of ['/mine', `/mine ${instance} extra`, '/mine another__program.0000000',
+    '/mine https://example.com/repo', '/mine programs/wordstat']) {
     assert.equal((await handle({...event, body: {command}}, env)).status, 'input_required');
   }
   await assert.rejects(() => handle({...event, repository: {id: 12, full_name: 'elsewhere/repo'}}, env), /bound repository/);
@@ -91,12 +92,10 @@ test('ProgramBench program name from the demo delegates using the catalog, not a
   const calls = [];
   const handler = catalog => createAdapter({
     catalog,
-    reportOnly: true,
     readIssue: async () => ({number: 1, body: 'Test one ProgramBench program and report here.'}),
-    pipeline: async (id, _output, _repo, opts) => {
-      assert.equal(opts.reportOnly, true);
+    pipeline: async id => {
       calls.push(id);
-      return {reportBody: 'Recorded evidence fixture.'};
+      return {number: 7, issue_url: `${origin}/${repository}/issues/7`};
     },
   });
   const body = {source: 'agent_command', source_event: 'issue_comment', capability: 'requirements-mining',
@@ -104,15 +103,15 @@ test('ProgramBench program name from the demo delegates using the catalog, not a
   const options = {...env, MINING_AGENT_STATE_DIR: os.tmpdir()};
   const dispatch = (catalog, instruction) => handler(catalog)({...event, body: {...body, instruction}}, options);
   const evidence = await dispatch([instance, gron], '在 ProgramBench 的 sd 实例上执行 -F 字面替换、输入来自标准输入的探测，记录实际命令、输入、输出与退出码，并将结果回贴到本工单。');
-  assert.match(evidence.summary, /Recorded evidence/);
-  assert.match((await dispatch([instance, gron], 'Explore ProgramBench program gron. Record the output.')).summary, /Recorded evidence/);
+  assert.equal(evidence.result.issue_number, 7);
+  assert.equal((await dispatch([instance, gron], 'Explore ProgramBench program gron. Record the output.')).result.issue_number, 7);
   const duplicate = await dispatch([instance, alternateSD, gron], '请测试 ProgramBench 的 `sd`。');
   assert.equal(duplicate.status, 'input_required');
   assert.match(duplicate.summary, /chmln__sd.*other__sd/);
   for (const text of ['请测试 ProgramBench 的 unknown，参考 sd。', '请测试 ProgramBench 的 sd 或 gron。', '请测试 ProgramBench 的 sd 和 ProgramBench 的 gron。', '这单没有指定程序。']) {
     assert.equal((await dispatch([instance, gron], text)).status, 'input_required');
   }
-  assert.match((await dispatch([instance, alternateSD], `Explore ${instance}.`)).summary, /Recorded evidence/);
+  assert.equal((await dispatch([instance, alternateSD], `Explore ${instance}.`)).result.issue_number, 7);
   assert.deepEqual(calls, [instance, gron, instance]);
 });
 
@@ -264,7 +263,6 @@ test('native Agent Team delivery links exactly once before closing the mining ta
   await runDevstarAgentOnce({
     handleEvent: createAdapter({catalog: [instance], postResult: postRuntimeResult, pipeline: async (_id, _state, _repo, options) => {
       assert.equal(options.sourceIssue, 2);
-      assert.equal(options.reportOnly, false);
       return {number: 7, issue_url: issueURL};
     }}),
   }, {...env, GITHUB_TOKEN: '', MINING_AGENT_STATE_DIR: state, DEVSTAR_RUNTIME_STATE_DIR: state});
@@ -273,7 +271,7 @@ test('native Agent Team delivery links exactly once before closing the mining ta
   assert.ok(!requests.some(([method, route]) => method === 'POST' && route.endsWith('/issues')));
 });
 
-test('mining adapter prepares a report for Runtime using the original Issue inputs', async () => {
+test('the official runner refuses exact probes from the original Issue even if Planner changes them', async () => {
   const body = {
     source: 'agent_command', source_event: 'issue_comment', capability: 'requirements-mining', command: '/mine',
     issue: {number: 407}, instruction: `Explore ${instance}, replacing a.b with Z`,
@@ -281,24 +279,18 @@ test('mining adapter prepares a report for Runtime using the original Issue inpu
   const original = '1. 参数为 `-F a.b X`，标准输入为 `a.b axb a.b` 加末尾换行。\r\n' +
     '2. 参数为 `-F zzz Q`，标准输入为 `hello world` 加末尾换行。';
   let reads = 0;
-  const handle = createAdapter({catalog: [instance], reportOnly: true, supportsFixedProbes: true,
+  const handle = createAdapter({catalog: [instance],
     readIssue: async (_event, method, route) => {
       assert.deepEqual([method, route], ['GET', '/issues/407']);
       reads++;
       return {number: 407, body: original};
     },
-    pipeline: async (_id, _state, _repo, options) => {
-      assert.deepEqual(options.fixedProbes, [
-        {id: 'OBS-fixed-1', argv: ['-F', 'a.b', 'X'], stdin: 'a.b axb a.b\n'},
-        {id: 'OBS-fixed-2', argv: ['-F', 'zzz', 'Q'], stdin: 'hello world\n'},
-      ]);
-      assert.equal(options.reportOnly, true);
-      return {reportBody: 'Evidence: X axb X'};
-    },
+    pipeline: () => assert.fail('must not replace fixed inputs with model-designed probes'),
   });
   const result = await handle({...event, body}, {...env, MINING_AGENT_STATE_DIR: os.tmpdir()});
   assert.equal(reads, 1);
-  assert.match(result.summary, /X axb X/);
+  assert.equal(result.status, 'input_required');
+  assert.match(result.summary, /原样执行/);
   assert.equal(result.result, undefined);
 });
 
