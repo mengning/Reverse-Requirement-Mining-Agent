@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -42,6 +43,7 @@ def execution_label(env):
 
 def direct_reference_command(command, executable):
     """Identify a simple direct invocation, not a substring in an echo or pipeline."""
+    command = re.sub(r"^\s*cd[ \t]+/workspace[ \t]+&&[ \t]+", "", command, count=1)
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>()")
         lexer.whitespace_split = True
@@ -62,10 +64,10 @@ def confirmed_reference_result(command, code, output, executable):
     if direct_reference_command(command, executable):
         return True
     # Accept only a direct invocation followed by an unmodified exit-code echo.
-    match = re.fullmatch(r'(.+);\s*echo\s+"EXIT=\$\?"\s*', command)
+    match = re.fullmatch(r'(.+);\s*echo\s+"EXIT[=:]\$\?"\s*', command)
     if not match or not direct_reference_command(match[1], executable) or code != 0:
         return False
-    recorded = re.search(r'(?:^|\n)EXIT=([0-9]{1,3})\s*(?:</output>)?\s*$', output)
+    recorded = re.search(r'(?:^|\n)EXIT[=:]([0-9]{1,3})\s*(?:</output>)?\s*$', output)
     return bool(recorded and 0 <= int(recorded[1]) <= 255 and int(recorded[1]) not in (126, 127))
 
 
@@ -156,10 +158,11 @@ def issue_from_result(instance, directory, *, executable="executable", source_la
         raise ValueError("候选报告过长，无法在平台分析上限内完整发布；请缩小探索范围，完整报告与轨迹已保留")
     evidence = []
     for command, code, output in observations:
-        if executable not in command or REPORT in command:
+        if not confirmed_reference_result(command, code, output, executable) or REPORT in command:
             continue
         # Fences are made longer than any fence in untrusted command/output.
-        text = f"$ {command}\n{output}"
+        visible = re.search(r"<output>([\s\S]*?)</output>", output)
+        text = f"$ {command}\nRecorded command exit: {code}\n{visible[1] if visible else output}"
         longest = max((len(match) for match in re.findall(r"`+", text)), default=0)
         fence = "`" * max(3, longest + 1)
         block = f"{fence}text\n{text[:4000]}\n{fence}"
@@ -168,6 +171,32 @@ def issue_from_result(instance, directory, *, executable="executable", source_la
             evidence.append(block)
     body = introduction + evidence_header + "\n\n".join(evidence) + ending
     return {"title": f"整理 {instance} 的候选需求规格", "body": body}
+
+
+def prepare_issue(instance, output, reference, image_id, runner_version, *, restored=False):
+    issue = issue_from_result(instance, output)
+    preserve_trajectory(instance, output, os.environ)
+    provenance = {"instance": instance, "image_reference": reference, "image_id": image_id,
+                  "mini_swe_agent_version": runner_version, "restored_from_completed_trajectory": restored}
+    (output / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    issue["body"] += f"\n\n实际运行镜像 ID：`{image_id}`。\n"
+    (output / "issue.json").write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return output / "issue.json"
+
+
+def restore_completed(instance, output, source, reference, image_id, runner_version):
+    """Recover a saved official submission after import failed; do not run inference."""
+    folder = Path(source)
+    expected = (f"{instance}.traj.json", "submission.tar.gz")
+    if not folder.is_absolute() or folder.name != instance or not all(
+            (folder / name).is_file() and not (folder / name).is_symlink() and
+            (folder / name).stat().st_size <= MAX_TRAJECTORY_BYTES for name in expected):
+        raise ValueError("恢复材料不是受控官方运行产物")
+    target = output / instance
+    target.mkdir()
+    for name in expected:
+        shutil.copyfile(folder / name, target / name)
+    return prepare_issue(instance, output, reference, image_id, runner_version, restored=True)
 
 
 def run(instance, output, model):
@@ -208,6 +237,11 @@ def run(instance, output, model):
         if preflight_image != pinned_image:
             raise ValueError("官方任务标签与锁定镜像不一致，未调用模型")
         config["environment"]["run_args"].extend(["--pull", "never"])
+    restored_source = os.environ.get("MINING_OFFICIAL_RECOVERY_SOURCE", "")
+    if restored_source:
+        if not pinned_image:
+            raise ValueError("恢复必须绑定原运行的镜像 ID")
+        return restore_completed(instance, output, restored_source, reference, pinned_image, __version__)
     config_file = output / "mining-config.yaml"
     config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     env = os.environ.copy()
@@ -234,14 +268,7 @@ def run(instance, output, model):
         containers = labeled_containers(label, env)
         if containers:
             subprocess.run(["docker", "stop", *containers], env=env, check=True, timeout=60)
-    issue = issue_from_result(instance, output)
-    preserve_trajectory(instance, output, os.environ)
-    provenance = {"instance": instance, "image_reference": reference, "image_id": image_id,
-                  "mini_swe_agent_version": __version__}
-    (output / "provenance.json").write_text(json.dumps(provenance, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    issue["body"] += f"\n\n实际运行镜像 ID：`{image_id}`。\n"
-    (output / "issue.json").write_text(json.dumps(issue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return output / "issue.json"
+    return prepare_issue(instance, output, reference, image_id, __version__)
 
 
 if __name__ == "__main__":

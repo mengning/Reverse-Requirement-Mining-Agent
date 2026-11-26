@@ -130,7 +130,7 @@ export function createHandler({catalog, pipeline, signal, supportsFixedProbes = 
         return {status: 'input_required', summary: '挖掘任务工单已关闭，未启动探测或建单。'};
     }
     const childEnv = Object.fromEntries(Object.entries(env).filter(([name]) =>
-      /^(?:PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|TEMP|TMP|TMPDIR|LANG|LC_ALL|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|OPENJIUWEN_API_BASE|OPENJIUWEN_API_KEY|OPENJIUWEN_MODEL|MINING_PYTHON|MINING_OFFICIAL_IMAGE_ID|MINING_OFFICIAL_LAB_LABEL|MINING_SCOPE)$/i.test(name)));
+      /^(?:PATH|PATHEXT|SYSTEMROOT|WINDIR|COMSPEC|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|TEMP|TMP|TMPDIR|LANG|LC_ALL|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG|DOCKER_CERT_PATH|DOCKER_TLS_VERIFY|OPENJIUWEN_API_BASE|OPENJIUWEN_API_KEY|OPENJIUWEN_MODEL|MINING_PYTHON|MINING_OFFICIAL_IMAGE_ID|MINING_OFFICIAL_LAB_LABEL|MINING_OFFICIAL_RECOVERY_SOURCE|MINING_SCOPE)$/i.test(name)));
     const sourceIssue = isIssueDelegation(event.body) ? Number(sourceNumber) : undefined;
     const receipt = await pipeline(instance, state, repository, {signal, fixedProbes, reportOnly, sourceIssue, recoverIncomplete: true, env: {
       ...childEnv, DEVSTAR_URL: platform.origin, GITHUB_SERVER_URL: platform.origin, DEVSTAR_TOKEN: credential,
