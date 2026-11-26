@@ -26,10 +26,14 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   if (NATIVE_RESULTS_FEATURE !== 'native-results/v1')
     throw new Error('A shared Agent Runtime with native-results/v1 is required');
   const {tasks} = JSON.parse(await readFile(new URL('../mining/tasks/official-catalog.json', import.meta.url), 'utf8'));
+  const officialCatalog = tasks.map(task => task.instance_id);
+  if (env.MINING_OFFICIAL_INSTANCE && !officialCatalog.includes(env.MINING_OFFICIAL_INSTANCE)) {
+    throw Error('Pinned instance is not in the official ProgramBench catalogue');
+  }
   const backend = env.MINING_EXECUTION_BACKEND === 'sd-pod'
     ? await configurePodBackend(env, publisher)
     : env.MINING_EXECUTION_BACKEND === 'pinned-stdin-pod' ? await configurePinnedStdinBackend(env, publisher)
-      : {catalog: tasks.map(task => task.instance_id), pipeline: runOfficialPipeline};
+      : {catalog: env.MINING_OFFICIAL_INSTANCE ? [env.MINING_OFFICIAL_INSTANCE] : officialCatalog, pipeline: runOfficialPipeline};
   const controller = new AbortController();
   const stop = () => {
     controller.abort();

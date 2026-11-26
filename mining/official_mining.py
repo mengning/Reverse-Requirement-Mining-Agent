@@ -193,6 +193,21 @@ def run(instance, output, model):
         config["agent"]["instance_template"] += "\nRequested exploration scope: " + scope + "\n"
     label = execution_label(os.environ)
     config["environment"]["run_args"].extend(["--label", label])
+    lab_label = os.environ.get("MINING_OFFICIAL_LAB_LABEL", "")
+    if lab_label:
+        if not re.fullmatch(r"devstar-local-official=[a-f0-9]{16}", lab_label):
+            raise ValueError("Invalid local lab execution label")
+        config["environment"]["run_args"].extend(["--label", lab_label])
+    reference = f"programbench/{instance.replace('__', '_1776_')}:task_cleanroom_v6"
+    pinned_image = os.environ.get("MINING_OFFICIAL_IMAGE_ID", "")
+    if pinned_image:
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", pinned_image):
+            raise ValueError("参考镜像必须绑定完整 ID")
+        preflight_image = subprocess.check_output(["docker", "image", "inspect", "--format", "{{.Id}}", reference],
+                                                 text=True, timeout=30).strip()
+        if preflight_image != pinned_image:
+            raise ValueError("官方任务标签与锁定镜像不一致，未调用模型")
+        config["environment"]["run_args"].extend(["--pull", "never"])
     config_file = output / "mining-config.yaml"
     config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     env = os.environ.copy()
@@ -202,6 +217,7 @@ def run(instance, output, model):
     env.pop("MINING_ISSUE_TOKEN", None)
     env["MSWEA_GLOBAL_CALL_LIMIT"] = "12"
     env["MSWEA_COST_TRACKING"] = "ignore_errors"
+    env["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
     env["MSWEA_GLOBAL_CONFIG_DIR"] = str(output / "agent-config")
     command = [sys.executable, "-m", "minisweagent.run.benchmarks.programbench", "--filter",
                "^" + re.escape(instance) + "$", "--workers", "1", "--output", str(output),
@@ -211,8 +227,9 @@ def run(instance, output, model):
         containers = labeled_containers(label, env)
         if len(containers) != 1:
             raise ValueError("无法确定本次运行的唯一参考程序容器")
-        reference = f"programbench/{instance.replace('__', '_1776_')}:task_cleanroom_v6"
         image_id = actual_image(containers[0], reference, env)
+        if pinned_image and image_id != pinned_image:
+            raise ValueError("实际运行镜像没有匹配锁定 ID，禁止发布")
     finally:
         containers = labeled_containers(label, env)
         if containers:
