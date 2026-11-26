@@ -7,7 +7,7 @@ import {readFixedProbes} from './fixed-probes.mjs';
 const instancePattern = /^[A-Za-z0-9._-]+__[A-Za-z0-9._-]+\.[0-9a-f]{7,40}$/;
 const instructionInstance = /(?<![A-Za-z0-9._-])[A-Za-z0-9._-]+__[A-Za-z0-9._-]+\.[0-9a-f]{7,40}(?![A-Za-z0-9_-]|\.[A-Za-z0-9])/g;
 const programName = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const benchmarkName = /\bProgramBench[ \t]*(?:的[ \t]*)?(?:(?:官方)?(?:样例|实例|程序)[ \t]*|(?:official[ \t]+)?(?:sample|instance|program)[ \t]+)?`?([A-Za-z0-9][A-Za-z0-9._-]*)`?/gi;
+const benchmarkName = /\bProgramBench[ \t]*(?:的[ \t]*)?(?:(?:官方[ \t]*)?(?:任务目录|目录|样例|实例|程序|任务)(?:中|里)?(?:的)?[ \t]*|官方[ \t]+|(?:official[ \t]+)?(?:sample|instance|program)[ \t]+)?`?([A-Za-z0-9][A-Za-z0-9._-]*)`?/gi;
 const alternativeName = /^[ \t]*(?:或(?:者)?|与|和|、|\/|\b(?:or|and)\b)[ \t]*`?[A-Za-z0-9]/i;
 const repoPattern = /^[\w.-]+\/[\w.-]+$/;
 const positiveInt = (value) => /^[1-9]\d*$/.test(String(value ?? '')) && Number.isSafeInteger(Number(value));

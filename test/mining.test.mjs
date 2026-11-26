@@ -115,6 +115,37 @@ test('ProgramBench program name from the demo delegates using the catalog, not a
   assert.deepEqual(calls, [instance, gron, instance]);
 });
 
+test('ChatBot can use a unique program name after a catalog qualifier', async () => {
+  const gron = 'tomnomnom__gron.88a6234';
+  const options = {...env, MINING_AGENT_STATE_DIR: os.tmpdir()};
+  const body = {source: 'chatbot_tool', agent_capability_id: 'requirements-mining', chat_run_id: 'chat-run-1', command: '/mine'};
+  let calls = 0;
+  const handle = createAdapter({catalog: [gron, instance],
+    readIssue: () => assert.fail('there is no source issue on the ChatBot path'),
+    pipeline: async (id, _dir, _repo, options) => {
+      calls++;
+      assert.equal(id, gron);
+      assert.equal(options.sourceIssue, undefined);
+      return {number: 7, issue_url: `${origin}/${repository}/issues/7`};
+    },
+  });
+  for (const instruction of [
+    '请用 ProgramBench 官方目录中的 gron 样例，做黑盒实测并整理成一张中文需求工单。',
+    '用 ProgramBench 官方任务 gron 实测。',
+    '请测 ProgramBench 官方 gron。',
+  ]) {
+    assert.equal((await handle({...event, body: {...body, instruction}}, options)).result.issue_number, 7);
+  }
+  for (const instruction of [
+    '请用 ProgramBench 官方目录中的 gron 或 sd。',
+    '用 ProgramBench 官方目录中的 unknown，参考 gron。',
+    '用 ProgramBench 官方目录中的 gron 和 ProgramBench 的 sd。',
+  ]) {
+    assert.equal((await handle({...event, body: {...body, instruction}}, options)).status, 'input_required');
+  }
+  assert.equal(calls, 3);
+});
+
 test('a pre-publication failure preserves diagnostics and permits one successful replay', async t => {
   const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-retry-'));
   t.after(() => rm(state, {recursive: true, force: true}));
