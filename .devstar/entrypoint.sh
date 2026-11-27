@@ -81,6 +81,8 @@ update_runtime() {
 }
 
 update_runtime
+DEVSTAR_AGENT_RUNTIME_PATH="$runtime_path"
+export DEVSTAR_AGENT_RUNTIME_PATH
 
 ADAPTER_CMD="${ADAPTER_CMD:-node src/adapter.mjs}"
 AGENT_LAUNCH_KIND="${AGENT_LAUNCH_KIND:-subscription_service}"

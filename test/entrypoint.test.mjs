@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {spawnSync} from "node:child_process";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
 import {fileURLToPath} from "node:url";
@@ -46,15 +47,25 @@ test("CI passes its Git token through the dedicated Runtime credential", async (
   assert.doesNotMatch(workflow, /DEVSTAR_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
 });
 
-test("the Pod template reuses system dependencies without installing the Python baseline", async () => {
+test("the DevStar template builds the same official runner as the CLI and CI", async () => {
   const config = JSON.parse(await readFile(new URL("../.devstar/devcontainer.json", import.meta.url), "utf8"));
   const dockerfile = await readFile(new URL("../.devstar/Dockerfile", import.meta.url), "utf8");
-  const [shared, pod, legacy] = dockerfile.split(/^FROM system-deps AS (?:pod-runner|docker-runner)$/m);
-  assert.equal(config.build.target, "pod-runner");
-  assert.match(shared, /^FROM .* AS system-deps$/m);
-  assert.match(shared, /apt-get install/);
-  assert.doesNotMatch(shared + pod, /pip install|requirements-baseline/);
-  assert.doesNotMatch(pod + legacy, /apt-get install/);
-  assert.match(pod, /ENTRYPOINT.*\.devstar\/entrypoint\.sh/);
-  assert.match(legacy, /pip install/);
+  assert.deepEqual(config.build, {dockerfile: "Dockerfile", context: ".."});
+  assert.equal(dockerfile.match(/^FROM /gm)?.length, 1);
+  assert.match(dockerfile, /apt-get install.*docker\.io/);
+  assert.match(dockerfile, /COPY mining\/requirements-baseline\.txt/);
+  assert.match(dockerfile, /pip install --no-cache-dir -r \/tmp\/mining-requirements\.txt/);
+  assert.match(dockerfile, /ENV MINING_PYTHON=\/opt\/programbench\/bin\/python/);
+  assert.match(dockerfile, /ENTRYPOINT.*\.devstar\/entrypoint\.sh/);
+});
+
+test("removed execution modes fail instead of silently running the official runner", () => {
+  const adapter = fileURLToPath(new URL("../src/adapter.mjs", import.meta.url));
+  for (const backend of ["sd-pod", "pinned-stdin-pod"]) {
+    const result = spawnSync(process.execPath, [adapter], {
+      env: {...process.env, MINING_EXECUTION_BACKEND: backend}, encoding: "utf8", windowsHide: true, timeout: 5000,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Only the official ProgramBench execution backend is supported/);
+  }
 });
