@@ -22,7 +22,7 @@ const env = {
   GITHUB_TOKEN: 'unrelated-token', OPENJIUWEN_MODEL: 'fixture-model',
 };
 
-test('standard event invokes the real publisher once and reuses the receipt on replay', async t => {
+test('platform-bound event publishes once and reuses the workspace receipt on replay', async t => {
   const state = await mkdtemp(path.join(os.tmpdir(), 'requirements-agent-'));
   t.after(() => rm(state, {recursive: true, force: true}));
   let explorations = 0;
@@ -48,10 +48,13 @@ test('standard event invokes the real publisher once and reuses the receipt on r
       return Response.json({...JSON.parse(request.body), number: 7, html_url: issueURL}, {status: 201});
     },
   })});
-  const options = {...env, MINING_AGENT_STATE_DIR: state};
+  const options = {...env, MINING_AGENT_REPOSITORY: '', WORK_REPO_ID: '12',
+    WORK_REPO_OWNER: 'owner', WORK_REPO_NAME: 'mining-lab', AGENT_REPO_PATH: state};
   const result = await handle(event, options);
   assert.deepEqual(result.result, {issue_number: 7, issue_url: issueURL});
   assert.deepEqual(await handle(event, options), result);
+  const receipt = JSON.parse(await readFile(path.join(state, '.devstar', 'runtime', 'mining', '12', '19', 'publication.json'), 'utf8'));
+  assert.equal(receipt.status, 'created');
   assert.deepEqual({explorations, publications}, {explorations: 1, publications: 1});
 });
 
@@ -64,6 +67,22 @@ test('invalid or ambiguous requests never invoke mining', async () => {
   await assert.rejects(() => handle({...event, repository: {id: 12, full_name: 'elsewhere/repo'}}, env), /bound repository/);
   await assert.rejects(() => handle({...event, repository: {...event.repository, id: 13}}, env), /bound repository/);
   await assert.rejects(() => handle({...event, credentials: {}}, env), /credential/);
+});
+
+test('default startup bindings cannot redirect events or receive another repository', async () => {
+  const handle = createHandler({catalog: [instance], pipeline: () => assert.fail('pipeline must not run')});
+  const scopeOnly = {...env, MINING_AGENT_REPOSITORY: ''};
+  const workspace = {...scopeOnly, WORK_REPO_ID: '12', WORK_REPO_OWNER: 'owner', WORK_REPO_NAME: 'mining-lab'};
+  await assert.rejects(() => handle({...event, repository: {...event.repository, id: 13}}, scopeOnly), /bound repository/);
+  for (const name of ['owner/..', 'owner/lab\n', '../lab']) {
+    await assert.rejects(() => handle({...event, repository: {...event.repository, full_name: name}}, scopeOnly), /bound repository/);
+  }
+  await assert.rejects(() => handle({...event, repository: {...event.repository, full_name: 'other/lab'}}, workspace), /bound repository/);
+  await assert.rejects(() => handle(event, {...workspace, WORK_REPO_ID: '13'}), /workspace does not match/);
+  await assert.rejects(() => handle(event, {...workspace, WORK_REPO_OWNER: ''}), /workspace does not match/);
+  await assert.rejects(() => handle(event, {...workspace, MINING_AGENT_REPOSITORY: 'other/lab'}), /workspace does not match/);
+  await assert.rejects(() => handle(event, {...scopeOnly, DEVSTAR_AGENT_SCOPE_REPO_ID: ''}), /explicit repository scope/);
+  await assert.rejects(() => handle(event, {...workspace, AGENT_REPO_PATH: 'relative'}), /absolute persistent/);
 });
 
 test('Planner authorization accepts one catalog instance from the separate instruction', async () => {

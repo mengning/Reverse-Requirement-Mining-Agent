@@ -11,13 +11,16 @@
 | 配置 | 用途 |
 | --- | --- |
 | `DEVSTAR_AGENT_SCOPE_KIND=repository`、`DEVSTAR_AGENT_SCOPE_REPO_ID` | 由 Agent Team 指定仓库范围；事件必须来自同一仓库 ID |
-| `MINING_AGENT_REPOSITORY` | 目标仓库的完整名称（`OWNER/REPO`），与分派事件的仓库名称一致 |
-| `MINING_AGENT_STATE_DIR` | Agent 私有的持久绝对路径；按仓库和事件隔离发布回执，重试不会重复建单 |
+| `WORK_REPO_ID`、`WORK_REPO_OWNER`、`WORK_REPO_NAME` | 平台的项目仓库绑定（若提供）；核对任务仓库，不使用模板仓库名 |
+| `MINING_AGENT_REPOSITORY` | 可选的旧配置，仅用于额外校验仓库全名；Agent Team 启动无需手填 |
+| `MINING_AGENT_STATE_DIR` | 可选的私有持久绝对路径；默认存到 Agent 工作区 `AGENT_REPO_PATH/.devstar/runtime/mining`，按仓库和事件隔离发布回执 |
 | `OPENJIUWEN_API_BASE`、`OPENJIUWEN_MODEL`、`OPENJIUWEN_API_KEY` | 探索模型配置，密钥通过实例 Secrets 注入 |
 | `MINING_PYTHON` | 运行固定 Python 依赖的解释器；模板构建的镜像已配置 |
 | `MINING_OFFICIAL_INSTANCE` | 可选，将当前实验限制到官方目录中的一个明确实例 ID |
 
 运行环境需要能连接经管理员批准的专用 Docker 执行环境并获取官方参考镜像。镜像只安装 Docker 客户端所需软件，不自动挂载宿主 socket、不启用特权模式。模型负责根据公开文档选择普通功能探测；参考程序在断网、非 root 的容器中运行。工单写入使用当前委托事件的服务账号，不使用模型凭证、用户令牌或实例注册令牌。
+
+添加模板后直接选择仓库范围并启动。注册只依赖 DevStar 注入的仓库范围、实例和认证配置；模型与 Docker 在收到实际挖掘任务后使用。独立运行并且没有持久化 Agent 工作区时，须指定 `MINING_AGENT_STATE_DIR`。
 
 本分支不接收源码 URL、仓库相对目录或自带探测后端。官方运行器根据任务和探索范围自行设计用例；收到明确要求原样运行的固定输入时，Agent 会拒绝该委托，不会悄悄替换成模型设计的用例。官方评分套件独立用于已有实现的验收，不在规格流程内运行。
 
