@@ -11,6 +11,8 @@ const benchmarkName = /\bProgramBench[ \t]*(?:的[ \t]*)?(?:(?:官方[ \t]*)?(?:
 const alternativeName = /^[ \t]*(?:或(?:者)?|与|和|、|\/|\b(?:or|and)\b)[ \t]*`?[A-Za-z0-9]/i;
 const repoPattern = /^[\w.-]+\/[\w.-]+$/;
 const positiveInt = (value) => /^[1-9]\d*$/.test(String(value ?? '')) && Number.isSafeInteger(Number(value));
+const validRepository = (name) => typeof name === 'string' && name === name.trim() &&
+  repoPattern.test(name) && name.split('/').every(part => part !== '.' && part !== '..');
 
 function isIssueDelegation(body) {
   return body.source === 'agent_command' && body.source_event === 'issue_comment' &&
@@ -62,8 +64,18 @@ function lookupInstance(body, known, aliases) {
 }
 
 export function validateRuntimeScope(env) {
-  if (env.DEVSTAR_AGENT_SCOPE_KIND !== 'repository' || !positiveInt(env.DEVSTAR_AGENT_SCOPE_REPO_ID) ||
-      !repoPattern.test(env.MINING_AGENT_REPOSITORY || '')) throw new Error('Mining requires an explicit repository scope');
+  const id = String(env.DEVSTAR_AGENT_SCOPE_REPO_ID ?? '');
+  if (env.DEVSTAR_AGENT_SCOPE_KIND !== 'repository' || !positiveInt(id)) {
+    throw new Error('Mining requires an explicit repository scope');
+  }
+  const legacyName = env.MINING_AGENT_REPOSITORY;
+  if (legacyName && !validRepository(legacyName)) throw new Error('Invalid MINING_AGENT_REPOSITORY');
+  if (!env.WORK_REPO_ID) return {id, name: legacyName || undefined};
+  const name = env.WORK_REPO_OWNER && env.WORK_REPO_NAME && `${env.WORK_REPO_OWNER}/${env.WORK_REPO_NAME}`;
+  if (String(env.WORK_REPO_ID) !== id || !validRepository(name) || (legacyName && legacyName !== name)) {
+    throw new Error('Mining workspace does not match the bound repository');
+  }
+  return {id, name};
 }
 
 export function createHandler({catalog, pipeline, signal, readIssue = requestRepoJSON, postResult}) {
@@ -75,11 +87,11 @@ export function createHandler({catalog, pipeline, signal, readIssue = requestRep
     aliases.set(name, [...(aliases.get(name) ?? []), id]);
   }
   return async function handleEvent(event, env) {
-    const repository = env.MINING_AGENT_REPOSITORY;
-    const repoID = env.DEVSTAR_AGENT_SCOPE_REPO_ID;
-    validateRuntimeScope(env);
-    if (event.repository?.full_name !== repository ||
-        Number(event.repository?.id) !== Number(repoID) || !positiveInt(event.event_id)) {
+    const {id: repoID, name: boundName} = validateRuntimeScope(env);
+    // The Runtime supplies the repository on the event envelope, not in the instruction.
+    const repository = event.repository?.full_name;
+    if (String(event.repository?.id) !== repoID || !validRepository(repository) ||
+        (boundName && repository !== boundName) || !positiveInt(event.event_id)) {
       throw new Error('Mining requires an event from the bound repository');
     }
     if (event.body?.pull_request || event.body?.issue?.pull_request) {
@@ -114,8 +126,9 @@ export function createHandler({catalog, pipeline, signal, readIssue = requestRep
         return {status: 'input_required', summary: error.message};
       }
     }
-    if (!path.isAbsolute(env.MINING_AGENT_STATE_DIR || '')) throw new Error('MINING_AGENT_STATE_DIR must be an absolute persistent path');
-    const state = path.join(env.MINING_AGENT_STATE_DIR, String(repoID), String(event.event_id));
+    const stateRoot = env.MINING_AGENT_STATE_DIR || path.join(env.AGENT_REPO_PATH || '', '.devstar', 'runtime', 'mining');
+    if (!path.isAbsolute(stateRoot)) throw new Error('Mining needs an absolute persistent AGENT_REPO_PATH or MINING_AGENT_STATE_DIR');
+    const state = path.join(stateRoot, repoID, String(event.event_id));
     if (source?.state === 'closed') {
       const prior = await readFile(path.join(state, 'publication.json'), 'utf8').catch(error => {
         if (error.code !== 'ENOENT') throw error;
